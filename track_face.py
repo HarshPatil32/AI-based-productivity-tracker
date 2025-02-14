@@ -1,20 +1,31 @@
 import cv2
+import logging
+
+
+
+log_file = 'face_detection_log.txt'
+with open(log_file, 'w'):
+    pass
+logging.basicConfig(filename=log_file, level = logging.INFO,
+                    format = '%(asctime)s - %(message)s')
 
 # Load OpenCV's pre-trained Haar cascade face detector
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
 
 def detect_face():
-    cap = cv2.VideoCapture(0)  # Access webcam
+    cap = cv2.VideoCapture(0)
+    logging.info("Started face detection")
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
         
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-        faces = face_cascade.detectMultiScale(gray, 1.05, 20)  # Detect faces
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  
+        faces = face_cascade.detectMultiScale(gray, 1.05, 20)  
         
-        # Draw rectangles around detected faces
+        logging.info(f"Faces detected: {len(faces)}")
+        
         for (x, y, w, h) in faces:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 5)
             roi_gray = gray[y:y+w, x:x+w]
@@ -33,7 +44,7 @@ def detect_face():
     cv2.destroyAllWindows()
 
 
-# Example: Trigger face detection on button click
+
 import tkinter as tk
 
 root = tk.Tk()
