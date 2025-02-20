@@ -1,56 +1,55 @@
 import cv2
-import logging
+import dlib
+import numpy as np
 
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 
+def eye_aspect_ratio(eye):
+    A = np.linalg.norm(np.array(eye[1]) - np.array(eye[5]))  
+    B = np.linalg.norm(np.array(eye[2]) - np.array(eye[4]))  
+    C = np.linalg.norm(np.array(eye[0]) - np.array(eye[3]))  
+    return (A + B) / (2.0 * C)
 
-log_file = 'face_detection_log.txt'
-with open(log_file, 'w'):
-    pass
-logging.basicConfig(filename=log_file, level = logging.INFO,
-                    format = '%(asctime)s - %(message)s')
-
-# Load OpenCV's pre-trained Haar cascade face detector
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
-
-def detect_face():
+def detect_eye_state():
     cap = cv2.VideoCapture(0)
-    logging.info("Started face detection")
+    EAR_THRESHOLD = 0.2 
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  
-        faces = face_cascade.detectMultiScale(gray, 1.05, 20)  
-        
-        logging.info(f"Faces detected: {len(faces)}")
-        
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 5)
-            roi_gray = gray[y:y+ h//2, x:x+w]
-            roi_color = frame[y:y+h, x:x+h]
-            eyes = eye_cascade.detectMultiScale(roi_gray, 1.1, 25)
-            for (ex, ey, ew, eh) in eyes:
-                cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 5)
 
-        cv2.imshow("Face Detection", frame)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = detector(gray)
 
-        # Exit on pressing 'q'
+        for face in faces:
+            x, y, w, h = face.left(), face.top(), face.width(), face.height()
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)  
+
+            landmarks = predictor(gray, face)
+
+            left_eye = [(landmarks.part(n).x, landmarks.part(n).y) for n in range(36, 42)]
+            right_eye = [(landmarks.part(n).x, landmarks.part(n).y) for n in range(42, 48)]
+
+            left_ear = eye_aspect_ratio(left_eye)
+            right_ear = eye_aspect_ratio(right_eye)
+            avg_ear = (left_ear + right_ear) / 2.0
+
+            eye_state = "Open" if avg_ear > EAR_THRESHOLD else "Closed"
+            color = (0, 255, 0) if eye_state == "Open" else (0, 0, 255)
+
+            for (x, y) in left_eye + right_eye:
+                cv2.circle(frame, (x, y), 2, color, -1)
+
+            cv2.putText(frame, f"Eye State: {eye_state}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+        cv2.imshow("Face & Eye Tracking", frame)
+
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
-
-
-import tkinter as tk
-
-root = tk.Tk()
-root.title("AI Productivity Tracker")
-
-btn = tk.Button(root, text="Start Face Detection", command=detect_face)
-btn.pack()
-
-root.mainloop()
+detect_eye_state()
