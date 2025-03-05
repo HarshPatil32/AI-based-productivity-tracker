@@ -1,6 +1,10 @@
 import cv2
 import dlib
 import numpy as np
+import time
+import logging
+
+
 
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
@@ -12,8 +16,12 @@ def eye_aspect_ratio(eye):
     return (A + B) / (2.0 * C)
 
 def detect_eye_state():
+    logging.basicConfig(filename="attention_tracker_log.txt", level=logging.DEBUG, format='%(asctime)s - %(message)s', filemode = 'w')
     cap = cv2.VideoCapture(0)
     EAR_THRESHOLD = 0.2 
+    closed_duration = 0 # Check how long eyes are closed
+    last_closed_time = None # What time were the eyes last closed
+    logging_interval = 2 # Log after 2 seconds of closed eyes
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -43,6 +51,19 @@ def detect_eye_state():
                 cv2.circle(frame, (x, y), 2, color, -1)
 
             cv2.putText(frame, f"Eye State: {eye_state}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+            if eye_state == "Closed":
+                logging.info(f"CLOSED for {closed_duration}")
+                if last_closed_time is None: # Check if this is the first time the eyes are closed
+                    last_closed_time = time.time()
+                else:
+                    closed_duration = time.time() - last_closed_time # See how long it has been since they were last closed
+                
+                if closed_duration>= logging_interval:
+                    logging.info(f'User wasn\'t paying attention for {closed_duration:.2f} seconds, they had their eyes closed')
+                    last_closed_time = time.time() # Reset the time
+            else:
+                last_closed_time = None
 
         cv2.imshow("Face & Eye Tracking", frame)
 
