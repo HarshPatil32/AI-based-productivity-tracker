@@ -1,8 +1,8 @@
 import numpy as np
 
 EAR_THRESHOLD = 0.2
-HEAD_YAW_THRESHOLD = 30
-HEAD_PITCH_THRESHOLD = 25
+HEAD_YAW_THRESHOLD = 160
+HEAD_PITCH_THRESHOLD = 45
 
 model_points = np.array([
     (0.0, 0.0, 0.0),             

@@ -20,6 +20,12 @@ def detect_attention():
     last_closed_time = None
     logging_interval = 2
 
+    missing_face_duration = 0
+    last_missing_time = None
+
+    head_pose_duration = 0
+    last_pose_off_time = None
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -27,6 +33,7 @@ def detect_attention():
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         landmarks_data = get_landmarks(gray)
+
 
         for face, landmarks in landmarks_data:
             # Extract eye coordinates
@@ -83,19 +90,37 @@ def detect_attention():
                 _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(proj_matrix)
                 yaw, pitch, _ = angles.flatten()
 
-                yaw -= 145  
 
-                if abs(yaw) > HEAD_YAW_THRESHOLD or abs(pitch) > HEAD_PITCH_THRESHOLD:
+                if abs(yaw) < HEAD_YAW_THRESHOLD or abs(pitch) > HEAD_PITCH_THRESHOLD:
                     cv2.putText(frame, "Not Paying Attention!", (50, 100),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    logging.info(f"Head turned away (Yaw: {yaw:.2f}, Pitch: {pitch:.2f})")
+                    
+                    if last_pose_off_time is None:
+                        last_pose_off_time = time.time()
+                    else:
+                        head_pose_duration = time.time() - last_pose_off_time
+                        last_pose_off_time = time.time()
 
-                cv2.putText(frame, f"Yaw: {yaw:.2f}, Pitch: {pitch:.2f}", (50, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    logging.info(f"Head turned away (Yaw: {abs(yaw):.2f} its supposed to be {HEAD_YAW_THRESHOLD}, Pitch: {pitch:.2f}), its supposed to be {HEAD_PITCH_THRESHOLD}")
+                else:
+                    last_pose_off_time = None
+
+
+
 
         cv2.imshow("Face & Attention Tracking", frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+    
+    logging.info("========= SESSION SUMMARY =========")
+    logging.info(f"Total time with eyes closed (≥{logging_interval}s chunks): {closed_duration:.2f} sec")
+    logging.info(f"Total time face was missing: {missing_face_duration:.2f} sec")
+    logging.info(f"Total time head pose was off: {head_pose_duration:.2f} sec")
+
+    total_attention_lost = closed_duration + missing_face_duration + head_pose_duration
+    logging.info(f"==> Total 'not paying attention' time: {total_attention_lost:.2f} sec")
+
 
     release_resources(cap)
