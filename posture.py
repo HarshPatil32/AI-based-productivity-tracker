@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-# Load the TFLite MoveNet model
 interpreter = tf.lite.Interpreter(model_path="models/movenet.tflite")
 interpreter.allocate_tensors()
 
@@ -10,7 +9,13 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 def preprocess_frame(frame):
-    """Resize and normalize the frame for MoveNet input"""
+    """
+    Resize and normalize the frame for MoveNet input
+    - Resize to 192x192 which is what MoveNet expects
+    - Convert BGF to RGB (again what MoveNet expects)
+    - Normalize pixel values to 0 and 1
+    - Add batch dimension
+    """
     image = cv2.resize(frame, (192, 192))
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = image.astype(np.float32) / 255.0
@@ -18,7 +23,11 @@ def preprocess_frame(frame):
 
 
 def draw_keypoints(frame, keypoints, confidence_threshold=0.3):
-    """Draws keypoints on the frame"""
+    """
+    Draws keypoints on the frame
+    - Convert the coordinates to pixels
+    - Mark them with green dots (temporary for testing pruposes)
+    """
     h, w, _ = frame.shape
     for kp in keypoints[0,0]:
         y, x, confidence = kp[0], kp[1], kp[2]
@@ -28,12 +37,16 @@ def draw_keypoints(frame, keypoints, confidence_threshold=0.3):
 
 
 def analyze_posture(frame):
-    """Runs pose estimation and returns the state of the postire and annotated frame"""
+    """
+    Runs pose estimation and returns the state of the postire and annotated frame
+    - Just returns how good the posture is
+    """
     input_image = preprocess_frame(frame)
     interpreter.set_tensor(input_details[0]['index'], input_image)
     interpreter.invoke()
     keypoints = interpreter.get_tensor(output_details[0]['index'])
 
+    # Get the keypoints we care about: nose, left shoulder, right shoulder 
     keypoints = keypoints[0,0]
     nose = keypoints[0]
     left_shoulder = keypoints[5]
@@ -41,9 +54,11 @@ def analyze_posture(frame):
 
     posture = "Proper"
 
+    # Check how for the nose is from the center of the shoulders
     shoulder_center_x = (left_shoulder[1] + right_shoulder[1]) / 2
     nose_offset = nose[1] - shoulder_center_x
-
+    
+    # Find the vertical drop of the nose
     shoulder_y_avg = (left_shoulder[0] + right_shoulder[0]) / 2
     head_drop =  nose[0] - shoulder_y_avg
 
