@@ -1,6 +1,10 @@
 import cv2
 import numpy as np
 import tensorflow as tf
+import time
+
+latest_frame = None
+posture_state = None
 
 interpreter = tf.lite.Interpreter(model_path="models/movenet.tflite")
 interpreter.allocate_tensors()
@@ -41,11 +45,13 @@ def analyze_posture(frame):
     Runs pose estimation and returns the state of the postire and annotated frame
     - Just returns how good the posture is
     """
+    print('Entered analyze posture')
     input_image = preprocess_frame(frame)
     interpreter.set_tensor(input_details[0]['index'], input_image)
     interpreter.invoke()
     keypoints = interpreter.get_tensor(output_details[0]['index'])
 
+        
     # Get the keypoints we care about: nose, left shoulder, right shoulder 
     keypoints = keypoints[0,0]
     nose = keypoints[0]
@@ -71,3 +77,33 @@ def analyze_posture(frame):
 
     cv2.putText(frame, f"Posture: {posture}", (30, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
     return frame, posture
+
+
+# For logging posture time durations
+posture_timer = {
+    "Proper": 0.0,
+    "Slouch": 0.0,
+    "Leaning": 0.0
+}
+last_posture_time = None
+def posture_thread():
+    global latest_frame, posture_state, last_posture_time
+
+    while True:
+        if latest_frame is not None:
+            frame_copy = latest_frame.copy()
+
+            _, current_posture = analyze_posture(frame_copy)
+            posture_state = current_posture
+
+            # Track the time
+            now = time.time()
+            if last_posture_time is None:
+                last_posture_time = now
+            else:
+                duration = now - last_posture_time
+                posture_timer[current_posture] += duration
+                last_posture_time = now
+
+        time.sleep(0.2) # Gonna run it at 5 fps for now so less CPU usage
+
