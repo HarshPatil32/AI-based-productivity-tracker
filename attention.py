@@ -5,6 +5,7 @@ import logging
 from face_utils import get_landmarks, eye_aspect_ratio
 from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, model_points
 from camera import get_video_capture, release_resources
+from posture import latest_frame
 
 
 def detect_attention():
@@ -31,6 +32,7 @@ def detect_attention():
         if not ret:
             break
 
+        latest_frame = frame
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         landmarks_data = get_landmarks(gray)
 
