@@ -6,10 +6,14 @@ import logging
 
 latest_frame = None
 posture_state = None
+session_start_time = None  # Track when session actually starts
 
 def set_latest_frame(frame):
-    global latest_frame
+    global latest_frame, session_start_time
     latest_frame = frame
+    # Record when tracking actually starts
+    if session_start_time is None:
+        session_start_time = time.time()
 
 try:
     interpreter = tf.lite.Interpreter(model_path="models/movenet.tflite")

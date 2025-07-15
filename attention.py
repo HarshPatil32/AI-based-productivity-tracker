@@ -141,21 +141,32 @@ def detect_attention():
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-        print("Exited main loop, writing session summary")
-        logging.info("Attention detection loop ended")
-        logging.info("========= SESSION SUMMARY =========")
-        logging.info(f"Total time with eyes closed (≥{logging_interval}s chunks): {closed_duration:.2f} sec")
-        logging.info(f"Total time face was missing: {missing_face_duration:.2f} sec")
-        logging.info(f"Total time head pose was off: {head_pose_duration:.2f} sec")
+        print("=========SESSION SUMMARY==========")
+        print(f"Total time with eyes closed: {closed_duration:.2f} sec")
+        print(f"Total time face was missing: {missing_face_duration:.2f} sec")
+        print(f"Total time head pose was off: {head_pose_duration:.2f} sec")
 
         total_attention_lost = closed_duration + missing_face_duration + head_pose_duration
-        logging.info(f"==> Total 'not paying attention' time: {total_attention_lost:.2f} sec")
+        print(f"==> Total 'not paying attention' time: {total_attention_lost:.2f} sec")
 
         release_resources(cap)
-        print("Session summary written, resources released")
+        
+        return {
+            'eyes_closed_time': closed_duration,
+            'face_missing_time': missing_face_duration,
+            'head_pose_off_time': head_pose_duration,
+            'total_attention_lost': total_attention_lost
+        }
         
     except Exception as e:
         logging.error(f"Error in attention detection: {e}", exc_info=True)
         print(f"Attention detection error: {e}")
         if 'cap' in locals():
             release_resources(cap)
+        # Return zeros if there was an error
+        return {
+            'eyes_closed_time': 0,
+            'face_missing_time': 0,
+            'head_pose_off_time': 0,
+            'total_attention_lost': 0
+        }
