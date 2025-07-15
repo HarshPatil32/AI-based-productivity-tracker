@@ -4,11 +4,13 @@ import threading
 import time
 
 if __name__ == "__main__":
-
+    # Clear the log file at the start of each session
+    with open("attention_tracker_log.txt", "w") as f:
+        f.write("")  # Clear the file
+    
     # Start the posture detection thread
     posture_t = threading.Thread(target=posture_thread, daemon=True)
     posture_t.start()
-
 
     detect_attention()
 

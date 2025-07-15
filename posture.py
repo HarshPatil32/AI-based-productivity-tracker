@@ -7,6 +7,10 @@ import logging
 latest_frame = None
 posture_state = None
 
+def set_latest_frame(frame):
+    global latest_frame
+    latest_frame = frame
+
 try:
     interpreter = tf.lite.Interpreter(model_path="models/movenet.tflite")
     interpreter.allocate_tensors()
