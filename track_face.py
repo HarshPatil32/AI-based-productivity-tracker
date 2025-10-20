@@ -27,7 +27,7 @@ model_points = np.array([
 
 def detect_attention():
     logging.basicConfig(filename="attention_tracker_log.txt", level=logging.DEBUG, format='%(asctime)s - %(message)s', filemode='w')
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(2)
     EAR_THRESHOLD = 0.2  
     closed_duration = 0   
     last_closed_time = None  

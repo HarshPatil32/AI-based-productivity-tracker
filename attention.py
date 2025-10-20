@@ -5,7 +5,6 @@ import logging
 from face_utils import get_landmarks, eye_aspect_ratio
 from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, model_points
 from camera import get_video_capture, release_resources
-import posture
 
 
 def detect_attention():
@@ -19,7 +18,23 @@ def detect_attention():
         logging.info("Starting attention detection")
         print("Logging initialized")
 
-        cap = get_video_capture(1)
+        cap = get_video_capture(0)  # Try camera index 0 first
+        
+        # Check if camera was successfully initialized
+        if not cap.isOpened():
+            print("Warning: Camera index 0 failed, trying index 1...")
+            cap = get_video_capture(1)
+            
+        if not cap.isOpened():
+            print("Error: Could not access any camera!")
+            logging.error("Could not access any camera")
+            return {
+                'eyes_closed_time': 0,
+                'face_missing_time': 0,
+                'head_pose_off_time': 0,
+                'total_attention_lost': 0
+            }
+            
         logging.info("Video capture initialized")
         print("Video capture initialized")
         
@@ -40,8 +55,6 @@ def detect_attention():
                 logging.info("Failed to read frame, breaking loop")
                 print("Failed to read frame, breaking loop")
                 break
-
-            posture.set_latest_frame(frame)
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             landmarks_data = get_landmarks(gray)
