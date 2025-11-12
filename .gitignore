@@ -3,3 +3,5 @@
 *.dat
 .env
 *.sql
+archive/
+__pycache__/
