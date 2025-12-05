@@ -110,3 +110,34 @@ def get_supabase_admin_client() -> Client:
 
 def get_authenticated_client(access_token: str) -> Client:
     return _supabase_client.get_client_with_auth(access_token)
+
+class DatabaseService:
+    def __init__(self, client: Optional[Client] = None):
+        self.client = client or get_supabase_client()
+
+    async def health_check(self) -> bool:
+        # Check if db connection is healthy bc supabase free tier always be doing something weird
+        try:
+            respone = self.client.table('users').select('id').limit(1).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+        
+    def get_user_by_id(self, user_id: str):
+        try:
+            response = self.client.table('users').select('*').eq('id', user_id).single().execute()
+            return response.data
+        except Exception as e:
+            logger.error(f"Error fetching user {user_id}: {e}")
+            return None
+        
+    def get_user_by_email(self, email: str):
+        try:
+            response = self.client.table('users').select('*').eq('email', email).single().execute()
+            return response.data
+        except Exception as e:
+            logger.error(f"Error fetching user email {email}: {e}")
+            return None
+        
+        
