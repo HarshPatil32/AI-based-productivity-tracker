@@ -145,3 +145,12 @@ def get_db_service(client: Optional[Client] = None) -> DatabaseService:
     # Works with FastAPI's depends() system
     # Creates and returns a database service instance that works in the route handlers
     return DatabaseService(client)
+
+__all__ = [
+    'get_supabase_client',
+    'get_supabase_admin_client',
+    'get_authenticated_client',
+    'get_db_service',
+    'DatabaseService',
+    'SupabaseClient'
+]
