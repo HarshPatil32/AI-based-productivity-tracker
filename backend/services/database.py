@@ -98,3 +98,15 @@ class SupabaseClient:
 def get_settings() -> Settings:
     # Get the cached instance of the settings
     return Settings()
+
+# When imported create the instance
+_supabase_client = SupabaseClient()
+
+def get_supabase_client() -> Client:
+    return _supabase_client.client
+
+def get_supabase_admin_client() -> Client:
+    return _supabase_client.admin_client
+
+def get_authenticated_client(access_token: str) -> Client:
+    return _supabase_client.get_client_with_auth(access_token)
