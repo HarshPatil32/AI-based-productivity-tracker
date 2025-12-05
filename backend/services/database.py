@@ -47,7 +47,7 @@ class SupabaseClient:
                 supabase_key = settings.SUPABASE_SERVICE_ROLE_KEY
             )
 
-            logger.ingo("Supabase clients initialized succesfully")
+            logger.info("Supabase clients initialized succesfully")
         except Exception as e:
             logger.error(f"Failed to intialize Supabase clients: {e}")
             raise
@@ -118,7 +118,7 @@ class DatabaseService:
     async def health_check(self) -> bool:
         # Check if db connection is healthy bc supabase free tier always be doing something weird
         try:
-            respone = self.client.table('users').select('id').limit(1).execute()
+            response = self.client.table('users').select('id').limit(1).execute()
             return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
