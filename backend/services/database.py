@@ -140,4 +140,8 @@ class DatabaseService:
             logger.error(f"Error fetching user email {email}: {e}")
             return None
         
-        
+    
+def get_db_service(client: Optional[Client] = None) -> DatabaseService:
+    # Works with FastAPI's depends() system
+    # Creates and returns a database service instance that works in the route handlers
+    return DatabaseService(client)
