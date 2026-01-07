@@ -5,3 +5,4 @@
 *.sql
 archive/
 __pycache__/
+README.md
