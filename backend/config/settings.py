@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
+from functools import lru_cache
 import os
 from pathlib import Path
 
@@ -68,10 +69,16 @@ class Settings(BaseSettings):
                 "my backend domain when deployed"
             ]
         return self.CORS_ORIGINS
-    
-settings = Settings()
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> "Settings":
+    """Return the cached Settings instance (loaded once from .env)."""
+    return Settings()
+
 
 def validate_settings():
+    settings = get_settings()
     errors = []
 
     if not settings.SUPABASE_URL:
