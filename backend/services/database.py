@@ -118,7 +118,7 @@ class DatabaseService:
     async def health_check(self) -> bool:
         # Check if db connection is healthy bc supabase free tier always be doing something weird
         try:
-            response = self.client.table('users').select('id').limit(1).execute()
+            response = self.client.table('profiles').select('id').limit(1).execute()
             return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
@@ -126,7 +126,7 @@ class DatabaseService:
         
     def get_user_by_id(self, user_id: str):
         try:
-            response = self.client.table('users').select('*').eq('id', user_id).single().execute()
+            response = self.client.table('profiles').select('*').eq('id', user_id).single().execute()
             return response.data
         except Exception as e:
             logger.error(f"Error fetching user {user_id}: {e}")
@@ -134,7 +134,7 @@ class DatabaseService:
         
     def get_user_by_email(self, email: str):
         try:
-            response = self.client.table('users').select('*').eq('email', email).single().execute()
+            response = self.client.table('profiles').select('*').eq('email', email).single().execute()
             return response.data
         except Exception as e:
             logger.error(f"Error fetching user email {email}: {e}")
