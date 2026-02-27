@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 import jwt
-from passlib.context import CryptoContext
+from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.config.settings import get_settings
@@ -10,7 +10,7 @@ from backend.models.auth import TokenData, UserInDB
 
 settings = get_settings()
 
-pwd_context = CryptoContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 def hash_password(password: str) -> str:
@@ -36,12 +36,21 @@ def create_access_token(user_id: UUID, email: str, expires_delta: Optional[timed
     
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
-def create_refresh_token(user_id, UUID, email: str, expires_delta: Optional[timedelta] = None):
+def create_refresh_token(user_id: UUID, email: str, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
-
     else:
-        expire = datetime.now(timezone.utc) + timedelta(days = 30) # refresh token lasts 30 days
+        expire = datetime.now(timezone.utc) + timedelta(days=30)  # refresh token lasts 30 days
+
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "type": "refresh"
+    }
+
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
 def decode_token(token: str):
@@ -68,7 +77,7 @@ def decode_token(token: str):
             exp = datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None
         )
     
-    except jwt.ExpireSignatureError:
+    except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code = status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
@@ -78,7 +87,7 @@ def decode_token(token: str):
     except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            details = "Expired token",
+            detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"}
         )
     
