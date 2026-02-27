@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -28,6 +28,8 @@ class TokenRefresh(BaseModel):
 # RESPONSE MODELS
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     email: EmailStr
     username: str
@@ -35,9 +37,6 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 class TokenResponse(BaseModel):
