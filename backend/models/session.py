@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -16,13 +16,12 @@ class SessionCreate(BaseModel):
 
 
 class SessionResponse(SessionCreate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     user_id: UUID
     attention_score: float = Field(..., description = "Derived score: 1 - (attention_lost / duration)")
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class SessionSummary(BaseModel):

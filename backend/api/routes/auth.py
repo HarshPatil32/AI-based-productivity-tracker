@@ -84,14 +84,25 @@ async def register (user_data: UserRegisterModel):
             "total_study_time": 0
         }
 
-        profile_response = client.table("profiles").insert(profile_data).execute()
-        # Delete the auth user if it doesn't succesfully create the profile
+        # Use upsert: the on_auth_user_created trigger may have already inserted
+        # the profile row; upsert ensures we set the correct username/full_name
+        # regardless of whether the trigger ran first.
+        profile_response = (
+            client.table("profiles")
+            .upsert(profile_data, on_conflict="id")
+            .execute()
+        )
         if not profile_response.data:
             client.auth.admin.delete_user(str(user_id))
             raise HTTPException(
                 status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Could not create user profile"
             )
+
+        # Ensure user_settings row exists (trigger may have silently failed)
+        client.table("user_settings").upsert(
+            {"user_id": str(user_id)}, on_conflict="user_id"
+        ).execute()
         
         # Tokens
         access_token = create_access_token(user_id = UUID(str(user_id)), email = user_data.email)
