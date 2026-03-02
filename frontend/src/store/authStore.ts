@@ -1,0 +1,42 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { User } from '../types/auth';
+
+interface AuthState {
+  user: User | null;
+  accessToken: string | null;
+  isAuthenticated: boolean;
+  setUser: (user: User) => void;
+  setAccessToken: (token: string) => void;
+  logout: () => void;
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      user: null,
+      accessToken: null,
+      isAuthenticated: false,
+
+      setUser: (user) => set({ user, isAuthenticated: true }),
+
+      setAccessToken: (token) => {
+        localStorage.setItem('access_token', token);
+        set({ accessToken: token });
+      },
+
+      logout: () => {
+        localStorage.removeItem('access_token');
+        set({ user: null, accessToken: null, isAuthenticated: false });
+      },
+    }),
+    {
+      name: 'auth-storage',
+      partialize: (state) => ({
+        user: state.user,
+        accessToken: state.accessToken,
+        isAuthenticated: state.isAuthenticated,
+      }),
+    }
+  )
+);
