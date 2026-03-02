@@ -40,3 +40,6 @@ export interface TokenResponse {
   expires_in: number;   // seconds
   user: User;
 }
+
+// Alias used by the API layer
+export type AuthResponse = TokenResponse;

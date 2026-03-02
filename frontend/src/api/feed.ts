@@ -1,7 +1,5 @@
-import apiClient from './client';
-import type { FeedResponse } from '../types/feed';
+import { api } from "./client"
+import type { FeedSession } from "@/types/feed"
 
-export const getFeed = (params?: { page?: number; page_size?: number }) =>
-  apiClient
-    .get<FeedResponse>('/feed', { params })
-    .then((r) => r.data);
+export const getFeed = (limit = 20, offset = 0) =>
+  api.get<FeedSession[]>("/feed/", { params: { limit, offset } }).then(r => r.data)

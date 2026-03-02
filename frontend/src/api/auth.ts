@@ -1,25 +1,13 @@
-import apiClient from './client';
-import type { AuthTokens, RegisterPayload, User } from '../types/auth';
+import { api } from "./client"
+import type { AuthResponse, User } from "@/types/auth"
 
-export const register = (payload: RegisterPayload) =>
-  apiClient.post<User>('/auth/register', payload).then((r) => r.data);
+export const register = (data: { email: string; username: string; password: string }) =>
+  api.post<AuthResponse>("/auth/register", data).then(r => r.data)
 
-export const login = (payload: { username: string; password: string }) => {
-  const form = new URLSearchParams();
-  form.append('username', payload.username);
-  form.append('password', payload.password);
-  return apiClient
-    .post<AuthTokens>('/auth/login', form, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    })
-    .then((r) => r.data);
-};
+export const login = (data: { email: string; password: string }) =>
+  api.post<AuthResponse>("/auth/login", data).then(r => r.data)
 
-export const logout = () =>
-  apiClient.post('/auth/logout').then((r) => r.data);
-
-export const refreshToken = () =>
-  apiClient.post<AuthTokens>('/auth/refresh').then((r) => r.data);
+export const logout = () => api.post("/auth/logout")
 
 export const getMe = () =>
-  apiClient.get<User>('/auth/me').then((r) => r.data);
+  api.get<User>("/auth/me").then(r => r.data)

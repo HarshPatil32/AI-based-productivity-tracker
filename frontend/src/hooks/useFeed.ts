@@ -6,10 +6,10 @@ const PAGE_SIZE = 20;
 export function useFeed() {
   return useInfiniteQuery({
     queryKey: ['feed'],
-    queryFn: ({ pageParam = 1 }) =>
-      getFeed({ page: pageParam as number, page_size: PAGE_SIZE }),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage) =>
-      lastPage.has_next ? lastPage.page + 1 : undefined,
+    queryFn: ({ pageParam = 0 }) =>
+      getFeed(PAGE_SIZE, pageParam as number),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === PAGE_SIZE ? allPages.length * PAGE_SIZE : undefined,
   });
 }

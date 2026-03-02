@@ -22,12 +22,12 @@ export function useSessions() {
   });
 
   const endMutation = useMutation({
-    mutationFn: (id: number) => endSession(id),
+    mutationFn: (id: string) => endSession(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteSession(id),
+    mutationFn: (id: string) => deleteSession(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   });
 
@@ -41,7 +41,7 @@ export function useSessions() {
   };
 }
 
-export function useSession(id: number) {
+export function useSession(id: string) {
   return useQuery({
     queryKey: ['sessions', id],
     queryFn: () => getSession(id),
