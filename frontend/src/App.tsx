@@ -34,47 +34,12 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Protected routes */}
-          <Route
-            path="/dashboard"
-            element={
-              <RequireAuth>
-                <DashboardPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/feed"
-            element={
-              <RequireAuth>
-                <FeedPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/sessions"
-            element={
-              <RequireAuth>
-                <SessionsPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/sessions/:id"
-            element={
-              <RequireAuth>
-                <SessionDetailPage />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/profile/:username"
-            element={
-              <RequireAuth>
-                <ProfilePage />
-              </RequireAuth>
-            }
-          />
+          {/* Protected routes (auth temporarily disabled) */}
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/feed" element={<FeedPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/sessions/:id" element={<SessionDetailPage />} />
+          <Route path="/profile/:username" element={<ProfilePage />} />
 
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
