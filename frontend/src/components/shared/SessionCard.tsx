@@ -1,61 +1,32 @@
-import { Link } from 'react-router-dom';
-import type { Session } from '../../types/session';
-import StatBadge from './StatBadge';
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import type { FeedSession } from "@/types/feed"
 
-interface SessionCardProps {
-  session: Session;
+const qualityColor: Record<string, string> = {
+  Excellent: "bg-green-500",
+  Good: "bg-blue-500",
+  Fair: "bg-yellow-500",
+  Poor: "bg-red-500",
 }
 
-export default function SessionCard({ session }: SessionCardProps) {
-  const durationMin = session.duration_seconds
-    ? Math.round(session.duration_seconds / 60)
-    : null;
-
+export default function SessionCard({ session }: { session: FeedSession }) {
+  const mins = Math.round(session.session_duration / 60)
   return (
-    <div className="rounded-xl border bg-card p-4 flex flex-col gap-3 hover:shadow-sm transition-shadow">
-      <div className="flex items-start justify-between gap-2">
-        <Link
-          to={`/sessions/${session.id}`}
-          className="font-semibold hover:underline truncate"
-        >
-          {session.title}
-        </Link>
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-            session.status === 'active'
-              ? 'bg-green-100 text-green-700'
-              : session.status === 'paused'
-              ? 'bg-yellow-100 text-yellow-700'
-              : 'bg-muted text-muted-foreground'
-          }`}
-        >
-          {session.status}
-        </span>
-      </div>
-
-      {session.description && (
-        <p className="text-sm text-muted-foreground line-clamp-2">
-          {session.description}
-        </p>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {durationMin !== null && (
-          <StatBadge label="Duration" value={`${durationMin}m`} />
-        )}
-        {session.attention_score !== undefined && (
-          <StatBadge
-            label="Attention"
-            value={`${Math.round(session.attention_score)}%`}
-          />
-        )}
-        {session.focus_score !== undefined && (
-          <StatBadge
-            label="Focus"
-            value={`${Math.round(session.focus_score)}%`}
-          />
-        )}
-      </div>
-    </div>
-  );
+    <Card className="bg-slate-900 border-slate-800 text-white">
+      <CardHeader className="flex flex-row items-center gap-3">
+        <div>
+          <p className="font-semibold">{session.username}</p>
+          <p className="text-xs text-slate-400">{session.session_date}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="font-medium">{session.title}</p>
+        <div className="flex gap-2 flex-wrap">
+          <Badge className={qualityColor[session.quality] ?? "bg-gray-500"}>{session.quality}</Badge>
+          <Badge variant="outline">{mins} min</Badge>
+          <Badge variant="outline">Focus: {session.focus_score}%</Badge>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
