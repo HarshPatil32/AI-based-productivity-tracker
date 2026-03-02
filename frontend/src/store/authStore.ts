@@ -1,42 +1,35 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { User } from '../types/auth';
+import { createContext, useContext, useState } from "react"
+import type { User } from "@/types/auth"
 
 interface AuthState {
-  user: User | null;
-  accessToken: string | null;
-  isAuthenticated: boolean;
-  setUser: (user: User) => void;
-  setAccessToken: (token: string) => void;
-  logout: () => void;
+  user: User | null
+  token: string | null
+  setAuth: (user: User, token: string) => void
+  clearAuth: () => void
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      user: null,
-      accessToken: null,
-      isAuthenticated: false,
+export const AuthContext = createContext<AuthState>({} as AuthState)
 
-      setUser: (user) => set({ user, isAuthenticated: true }),
-
-      setAccessToken: (token) => {
-        localStorage.setItem('access_token', token);
-        set({ accessToken: token });
-      },
-
-      logout: () => {
-        localStorage.removeItem('access_token');
-        set({ user: null, accessToken: null, isAuthenticated: false });
-      },
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({
-        user: state.user,
-        accessToken: state.accessToken,
-        isAuthenticated: state.isAuthenticated,
-      }),
-    }
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(
+    () => localStorage.getItem("access_token")
   )
-);
+
+  const setAuth = (u: User, t: string) => {
+    setUser(u); setToken(t)
+    localStorage.setItem("access_token", t)
+  }
+  const clearAuth = () => {
+    setUser(null); setToken(null)
+    localStorage.removeItem("access_token")
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, token, setAuth, clearAuth }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export const useAuthStore = () => useContext(AuthContext)
