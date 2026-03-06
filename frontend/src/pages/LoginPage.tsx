@@ -134,7 +134,7 @@ export default function LoginPage() {
                 />
                 Remember me
               </label>
-              <button className="text-sm text-blue-600 hover:underline">Forgot password?</button>
+              <button className="text-sm text-white hover:underline">Forgot password?</button>
             </div>
 
             {error && <p className="text-red-500 text-sm">Invalid credentials</p>}
