@@ -3,6 +3,7 @@
 *.dat
 .env
 *.sql
+!schema.sql
 archive/
 __pycache__/
 README.md
