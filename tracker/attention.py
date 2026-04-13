@@ -7,6 +7,13 @@ from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, mode
 from camera import get_video_capture, release_resources
 
 
+def is_head_pose_distracted(
+    yaw: float, pitch: float, yaw_threshold: float, pitch_threshold: float
+) -> bool:
+    """Return True when yaw or pitch exceeds the given thresholds."""
+    return abs(yaw) > yaw_threshold or abs(pitch) > pitch_threshold
+
+
 def detect_attention():
     print("Starting detect_attention function")
     try:
@@ -124,7 +131,7 @@ def detect_attention():
                         _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(proj_matrix)
                         yaw, pitch, _ = angles.flatten()
 
-                        if abs(yaw) < HEAD_YAW_THRESHOLD or abs(pitch) > HEAD_PITCH_THRESHOLD:
+                        if is_head_pose_distracted(yaw, pitch, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD):
                             print("Entered here yaw stuff")
                             cv2.putText(frame, "Not Paying Attention!", (50, 100),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)

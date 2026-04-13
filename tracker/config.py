@@ -14,7 +14,8 @@ def _get_env(key: str, default: str, cast):
         return cast(raw)
     except (ValueError, TypeError):
         raise ValueError(
-            f"Invalid value for {key}={raw!r}. Expected {cast.__name__}."
+            f"Config error: {key}={raw!r} cannot be parsed as {cast.__name__}. "
+            f"Default would have been {default!r}."
         )
 
 
@@ -23,16 +24,25 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 AUTH_TOKEN: str | None = os.getenv("AUTH_TOKEN", None)
 
 EAR_THRESHOLD = _get_env("EAR_THRESHOLD", "0.2", float)
-HEAD_YAW_THRESHOLD = _get_env("HEAD_YAW_THRESHOLD", "160", float)
+# 35 degrees: at this angle a user has clearly turned away from the screen
+# this threshold assumes yaw is expressed on a 0-centred scale where
+# 0 = facing forward. track_face.py applies `yaw = yaw - 145` to normalise
+# raw cv2.decomposeProjectionMatrix output; attention.py must do the same
+# before comparing against this threshold.
+HEAD_YAW_THRESHOLD = _get_env("HEAD_YAW_THRESHOLD", "35", float)
 HEAD_PITCH_THRESHOLD = _get_env("HEAD_PITCH_THRESHOLD", "45", float)
 
 if not (0.0 < EAR_THRESHOLD < 1.0):
     raise ValueError(
         f"EAR_THRESHOLD={EAR_THRESHOLD} is out of range. Must be between 0.0 and 1.0."
     )
-if HEAD_YAW_THRESHOLD <= 0 or HEAD_PITCH_THRESHOLD <= 0:
+if not (0 < HEAD_YAW_THRESHOLD <= 90):
     raise ValueError(
-        "HEAD_YAW_THRESHOLD and HEAD_PITCH_THRESHOLD must be positive."
+        f"HEAD_YAW_THRESHOLD={HEAD_YAW_THRESHOLD} is out of range. Must be between 0 and 90 degrees."
+    )
+if HEAD_PITCH_THRESHOLD <= 0:
+    raise ValueError(
+        "HEAD_PITCH_THRESHOLD must be positive."
     )
 
 model_points = np.array([
