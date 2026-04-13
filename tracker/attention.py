@@ -3,7 +3,7 @@ import time
 import numpy as np
 import logging
 from face_utils import get_landmarks, eye_aspect_ratio
-from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, model_points
+from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, model_points, CAMERA_INDEX
 from camera import get_video_capture, release_resources
 
 
@@ -18,13 +18,8 @@ def detect_attention():
         logging.info("Starting attention detection")
         print("Logging initialized")
 
-        cap = get_video_capture(0)  # Try camera index 0 first
-        
-        # Check if camera was successfully initialized
-        if not cap.isOpened():
-            print("Warning: Camera index 0 failed, trying index 1...")
-            cap = get_video_capture(1)
-            
+        cap = get_video_capture(CAMERA_INDEX)
+
         if not cap.isOpened():
             print("Error: Could not access any camera!")
             logging.error("Could not access any camera")
