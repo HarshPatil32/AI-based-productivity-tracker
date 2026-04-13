@@ -26,6 +26,8 @@ _config_stub = types.ModuleType("config")
 _config_stub.EAR_THRESHOLD = 0.2
 _config_stub.HEAD_YAW_THRESHOLD = 35.0
 _config_stub.HEAD_PITCH_THRESHOLD = 45.0
+_config_stub.YAW_OFFSET = 145.0
+_config_stub.SHOW_OVERLAY = False
 _config_stub.model_points = None
 _config_stub.CAMERA_INDEX = 0
 for _name in ("face_utils", "camera", "config"):
@@ -73,8 +75,10 @@ def test_yaw_threshold_default_is_sensible():
 
 from tracker.attention import is_head_pose_distracted
 
-YAW_T = 35.0
-PITCH_T = 45.0
+# Use the same values as the stub so there is only one place to update
+# when config.py gains or changes a constant.
+YAW_T = _config_stub.HEAD_YAW_THRESHOLD
+PITCH_T = _config_stub.HEAD_PITCH_THRESHOLD
 
 
 def test_both_within_threshold_not_distracted():
@@ -133,3 +137,67 @@ def test_config_accepts_valid_yaw_threshold():
         "HEAD_YAW_THRESHOLD": "35",
     })
     assert cfg.HEAD_YAW_THRESHOLD == 35.0
+
+
+def test_config_yaw_offset_default():
+    cfg = _reload_config({"TRACKER_SKIP_DOTENV": "1"})
+    assert cfg.YAW_OFFSET == 145.0
+
+
+def test_config_rejects_invalid_yaw_offset():
+    with pytest.raises(ValueError, match="YAW_OFFSET"):
+        _reload_config({"TRACKER_SKIP_DOTENV": "1", "YAW_OFFSET": "not_a_number"})
+
+
+# Yaw normalisation — guards the `yaw = yaw - YAW_OFFSET` step
+
+def _normalised_yaw(raw: float, offset: float = 145.0) -> float:
+    """Mirror the normalisation applied in attention.py."""
+    return raw - offset
+
+
+def test_raw_yaw_at_offset_is_zero_after_normalisation():
+    # Raw value of 145 should normalise to 0 (straight ahead) — must not distract.
+    normalised = _normalised_yaw(145.0)
+    assert not is_head_pose_distracted(normalised, 0, YAW_T, PITCH_T)
+
+
+def test_raw_yaw_well_above_offset_triggers_distraction():
+    # Raw 185 → normalised +40, beyond 35° threshold.
+    normalised = _normalised_yaw(185.0)
+    assert is_head_pose_distracted(normalised, 0, YAW_T, PITCH_T)
+
+
+def test_raw_yaw_well_below_offset_triggers_distraction():
+    # Raw 105 → normalised -40, beyond threshold in negative direction.
+    normalised = _normalised_yaw(105.0)
+    assert is_head_pose_distracted(normalised, 0, YAW_T, PITCH_T)
+
+
+def test_raw_yaw_left_at_threshold_boundary_not_distracted():
+    # Symmetry check for the left-turn side: raw 110 → normalised -35,
+    # exactly at threshold — should NOT trigger (mirrors the right-side
+    # boundary test above).
+    normalised = _normalised_yaw(110.0)
+    assert not is_head_pose_distracted(normalised, 0, YAW_T, PITCH_T)
+
+
+def test_raw_yaw_left_just_beyond_threshold_is_distracted():
+    # Raw 108 → normalised -37, just past the -35° boundary.
+    normalised = _normalised_yaw(108.0)
+    assert is_head_pose_distracted(normalised, 0, YAW_T, PITCH_T)
+
+
+def test_without_normalisation_raw_yaw_would_always_distract():
+    # Sanity check: raw 145 compared WITHOUT normalisation would falsely
+    # exceed a 35° threshold — confirms normalisation is necessary.
+    assert is_head_pose_distracted(145.0, 0, YAW_T, PITCH_T)
+
+
+# Structural guard — prevent re-introduction of deleted duplicates
+
+def test_track_face_does_not_exist():
+    tracker_dir = os.path.join(os.path.dirname(__file__), "..", "tracker")
+    assert not os.path.exists(os.path.join(tracker_dir, "track_face.py")), (
+        "track_face.py was re-introduced; remove it and use attention.py instead"
+    )

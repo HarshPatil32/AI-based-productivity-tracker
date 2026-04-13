@@ -3,7 +3,7 @@ import time
 import numpy as np
 import logging
 from face_utils import get_landmarks, eye_aspect_ratio
-from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, model_points, CAMERA_INDEX
+from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, YAW_OFFSET, SHOW_OVERLAY, model_points, CAMERA_INDEX
 from camera import get_video_capture, release_resources
 
 
@@ -130,6 +130,11 @@ def detect_attention():
                         proj_matrix = np.hstack((rvec_matrix, np.zeros((3, 1))))
                         _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(proj_matrix)
                         yaw, pitch, _ = angles.flatten()
+                        yaw = yaw - YAW_OFFSET
+
+                        if SHOW_OVERLAY:
+                            cv2.putText(frame, f"Yaw: {yaw:.2f}, Pitch: {pitch:.2f}", (50, 150),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
                         if is_head_pose_distracted(yaw, pitch, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD):
                             print("Entered here yaw stuff")

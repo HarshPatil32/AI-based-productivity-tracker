@@ -24,13 +24,18 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 AUTH_TOKEN: str | None = os.getenv("AUTH_TOKEN", None)
 
 EAR_THRESHOLD = _get_env("EAR_THRESHOLD", "0.2", float)
+# Empirical offset to centre the raw yaw value returned by cv2.decomposeProjectionMatrix around 0 (facing forward).
+# 145 is the observed resting value when using solvePnP with dlib's 68-point model on a standard webcam. If yaw readings seem inverted
+# or consistently off, adjust this value via the YAW_OFFSET env var.
+YAW_OFFSET = _get_env("YAW_OFFSET", "145", float)
 # 35 degrees: at this angle a user has clearly turned away from the screen
-# this threshold assumes yaw is expressed on a 0-centred scale where
-# 0 = facing forward. track_face.py applies `yaw = yaw - 145` to normalise
-# raw cv2.decomposeProjectionMatrix output; attention.py must do the same
-# before comparing against this threshold.
 HEAD_YAW_THRESHOLD = _get_env("HEAD_YAW_THRESHOLD", "35", float)
+# pitch is used as-is (no offset applied). If solvePnP produces a systematic pitch offset on a different camera, introduce a PITCH_OFFSET
+# constant here following the same pattern as YAW_OFFSET.
 HEAD_PITCH_THRESHOLD = _get_env("HEAD_PITCH_THRESHOLD", "45", float)
+# Set SHOW_OVERLAY=1 to render the live Yaw/Pitch values on the camera
+# window. Off by default to avoid visual noise in production sessions.
+SHOW_OVERLAY = _get_env("SHOW_OVERLAY", "0", int) != 0
 
 if not (0.0 < EAR_THRESHOLD < 1.0):
     raise ValueError(
