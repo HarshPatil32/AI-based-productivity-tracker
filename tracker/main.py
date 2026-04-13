@@ -1,5 +1,11 @@
-from attention import detect_attention
+import logging
 import time
+
+from attention import detect_attention
+from config import CAMERA_INDEX, BACKEND_URL, AUTH_TOKEN
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 def calculate_productivity_metrics(attention_metrics, session_duration):
     """Calculate productivity metrics based on attention tracking"""
@@ -33,8 +39,11 @@ def calculate_productivity_metrics(attention_metrics, session_duration):
 if __name__ == "__main__":
     # Record session start time
     session_start_time = time.time()
-    print("Starting productivity tracking session...")
-    print("Press 'q' in the camera window to stop tracking")
+    logger.info("Starting productivity tracking session...")
+    logger.info("Camera index: %s", CAMERA_INDEX)
+    logger.info("Backend URL: %s", BACKEND_URL)
+    logger.info("Auth token: %s", "set" if AUTH_TOKEN else "not set")
+    logger.info("Press 'q' in the camera window to stop tracking")
 
     attention_metrics = detect_attention()
     

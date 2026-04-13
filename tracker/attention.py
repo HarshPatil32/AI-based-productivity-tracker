@@ -3,8 +3,15 @@ import time
 import numpy as np
 import logging
 from face_utils import get_landmarks, eye_aspect_ratio
-from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, model_points
+from config import EAR_THRESHOLD, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD, YAW_OFFSET, SHOW_OVERLAY, model_points, CAMERA_INDEX
 from camera import get_video_capture, release_resources
+
+
+def is_head_pose_distracted(
+    yaw: float, pitch: float, yaw_threshold: float, pitch_threshold: float
+) -> bool:
+    """Return True when yaw or pitch exceeds the given thresholds."""
+    return abs(yaw) > yaw_threshold or abs(pitch) > pitch_threshold
 
 
 def detect_attention():
@@ -18,13 +25,8 @@ def detect_attention():
         logging.info("Starting attention detection")
         print("Logging initialized")
 
-        cap = get_video_capture(0)  # Try camera index 0 first
-        
-        # Check if camera was successfully initialized
-        if not cap.isOpened():
-            print("Warning: Camera index 0 failed, trying index 1...")
-            cap = get_video_capture(1)
-            
+        cap = get_video_capture(CAMERA_INDEX)
+
         if not cap.isOpened():
             print("Error: Could not access any camera!")
             logging.error("Could not access any camera")
@@ -128,8 +130,13 @@ def detect_attention():
                         proj_matrix = np.hstack((rvec_matrix, np.zeros((3, 1))))
                         _, _, _, _, _, _, angles = cv2.decomposeProjectionMatrix(proj_matrix)
                         yaw, pitch, _ = angles.flatten()
+                        yaw = yaw - YAW_OFFSET
 
-                        if abs(yaw) < HEAD_YAW_THRESHOLD or abs(pitch) > HEAD_PITCH_THRESHOLD:
+                        if SHOW_OVERLAY:
+                            cv2.putText(frame, f"Yaw: {yaw:.2f}, Pitch: {pitch:.2f}", (50, 150),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+                        if is_head_pose_distracted(yaw, pitch, HEAD_YAW_THRESHOLD, HEAD_PITCH_THRESHOLD):
                             print("Entered here yaw stuff")
                             cv2.putText(frame, "Not Paying Attention!", (50, 100),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
