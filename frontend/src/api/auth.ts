@@ -1,7 +1,7 @@
 import { api } from "./client"
-import type { AuthResponse, User } from "@/types/auth"
+import type { AuthResponse, RegisterPayload, User } from "@/types/auth"
 
-export const register = (data: { email: string; username: string; password: string }) =>
+export const register = (data: RegisterPayload) =>
   api.post<AuthResponse>("/auth/register", data).then(r => r.data)
 
 export const login = (data: { email: string; password: string }) =>
