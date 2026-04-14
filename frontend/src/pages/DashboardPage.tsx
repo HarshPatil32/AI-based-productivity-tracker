@@ -1,7 +1,10 @@
 import Navbar from '../components/layout/Navbar';
+import ErrorMessage from '../components/shared/ErrorMessage';
+import { useSessions } from '../hooks/useSessions';
 import { Clock, Eye, Target, Flame, TrendingUp, Award, Calendar, Play } from 'lucide-react';
 
 export default function DashboardPage() {
+  const { sessions, isLoading, error } = useSessions();
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -59,7 +62,26 @@ export default function DashboardPage() {
               </button>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 py-12 text-center">
-              <p className="text-sm text-gray-400">No sessions yet. Start your first session!</p>
+              {error ? (
+                <ErrorMessage error={error} />
+              ) : isLoading ? (
+                <p className="text-sm text-gray-400">Loading sessions…</p>
+              ) : sessions.length === 0 ? (
+                <p className="text-sm text-gray-400">No sessions yet. Start your first session!</p>
+              ) : (
+                <ul className="divide-y divide-gray-100 text-left">
+                  {sessions.slice(0, 5).map((s) => (
+                    <li key={s.id} className="px-6 py-3 flex items-center justify-between">
+                      <span className="text-sm text-gray-700">
+                        {new Date(s.started_at).toLocaleDateString()}
+                      </span>
+                      <span className="text-sm text-gray-500">
+                        {Math.round(s.duration_seconds / 60)} min &middot; {s.attention_score}% attention
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 

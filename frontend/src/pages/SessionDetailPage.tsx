@@ -6,16 +6,12 @@ import { useSession, useSessions } from '../hooks/useSessions';
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: session, isLoading } = useSession(Number(id));
-  const { end, remove } = useSessions();
-
-  const handleEnd = async () => {
-    await end.mutateAsync(Number(id));
-  };
+  const { data: session, isLoading } = useSession(id!);
+  const { remove } = useSessions();
 
   const handleDelete = async () => {
     if (!confirm('Delete this session?')) return;
-    await remove.mutateAsync(Number(id));
+    await remove.mutateAsync(id!);
     navigate('/sessions');
   };
 
@@ -42,22 +38,11 @@ export default function SessionDetailPage() {
   return (
     <PageShell>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">{session.title}</h1>
-            {session.description && (
-              <p className="text-muted-foreground text-sm mt-1">{session.description}</p>
-            )}
-          </div>
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
-              session.status === 'active'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-muted text-muted-foreground'
-            }`}
-          >
-            {session.status}
-          </span>
+        <div>
+          <h1 className="text-2xl font-bold">{session.notes ?? 'Study Session'}</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {new Date(session.created_at).toLocaleDateString()}
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -67,21 +52,9 @@ export default function SessionDetailPage() {
           {session.attention_score !== undefined && (
             <StatBadge label="Attention" value={`${Math.round(session.attention_score)}%`} />
           )}
-          {session.focus_score !== undefined && (
-            <StatBadge label="Focus" value={`${Math.round(session.focus_score)}%`} />
-          )}
         </div>
 
         <div className="flex gap-3">
-          {session.status === 'active' && (
-            <button
-              onClick={handleEnd}
-              disabled={end.isPending}
-              className="rounded-md bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-60"
-            >
-              {end.isPending ? 'Ending…' : 'End session'}
-            </button>
-          )}
           <button
             onClick={handleDelete}
             disabled={remove.isPending}

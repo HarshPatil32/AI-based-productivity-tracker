@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import UserAvatar from '../components/shared/UserAvatar';
-import StatBadge from '../components/shared/StatBadge';
-import SessionCard from '../components/shared/SessionCard';
+import { SessionCard } from '../components/SessionCard';
+import ErrorMessage from '../components/shared/ErrorMessage';
 import { useProfile } from '../hooks/useProfile';
 import { useAuth } from '../hooks/useAuth';
 import { useSessions } from '../hooks/useSessions';
@@ -11,7 +11,7 @@ import { useSessions } from '../hooks/useSessions';
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();
   const { user: me } = useAuth();
-  const { profile, isLoading, followers, following, follow, unfollow, update } =
+  const { profile, isLoading, error, followers, following, follow, unfollow, update } =
     useProfile(username!);
   const { sessions } = useSessions();
   const [editing, setEditing] = useState(false);
@@ -37,6 +37,17 @@ export default function ProfilePage() {
     return (
       <PageShell>
         <p className="text-muted-foreground text-sm">Loading profile…</p>
+      </PageShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <PageShell>
+        <div className="text-center space-y-1 py-8">
+          <p className="text-sm text-muted-foreground">Could not load profile.</p>
+          <ErrorMessage error={error} />
+        </div>
       </PageShell>
     );
   }
@@ -118,7 +129,16 @@ export default function ProfilePage() {
             <h2 className="text-lg font-semibold">Your sessions</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               {sessions.map((s) => (
-                <SessionCard key={s.id} session={s} />
+                <SessionCard
+                  key={s.id}
+                  id={s.id}
+                  date={new Date(s.created_at).toLocaleDateString()}
+                  duration={Math.round(s.duration_seconds / 60)}
+                  attentionPercentage={Math.round(s.attention_score)}
+                  productivityScore={Math.round(s.attention_score)}
+                  distractionCount={Math.round(s.total_attention_lost)}
+                  subject={s.notes ?? 'Study Session'}
+                />
               ))}
             </div>
             {sessions.length === 0 && (

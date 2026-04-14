@@ -28,6 +28,7 @@ export interface User {
   email: string;
   username: string;
   full_name?: string;
+  bio?: string;
   avatar_url?: string;
   created_at: string;
   updated_at?: string;

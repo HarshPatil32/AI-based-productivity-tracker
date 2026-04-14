@@ -31,14 +31,14 @@ export function useProfile(username: string) {
   });
 
   const followMutation = useMutation({
-    mutationFn: (id: number) => follow(id),
+    mutationFn: (id: string) => follow(id as unknown as number),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users', username, 'followers'] });
     },
   });
 
   const unfollowMutation = useMutation({
-    mutationFn: (id: number) => unfollow(id),
+    mutationFn: (id: string) => unfollow(id as unknown as number),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users', username, 'followers'] });
     },
@@ -47,6 +47,7 @@ export function useProfile(username: string) {
   return {
     profile: profileQuery.data,
     isLoading: profileQuery.isLoading,
+    error: profileQuery.error,
     followers: followersQuery.data ?? [],
     following: followingQuery.data ?? [],
     update: updateMutation,
