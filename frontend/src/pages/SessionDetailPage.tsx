@@ -1,24 +1,51 @@
+import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import PageShell from '../components/layout/PageShell';
 import StatBadge from '../components/shared/StatBadge';
+import ErrorMessage from '../components/shared/ErrorMessage';
 import { useSession, useSessions } from '../hooks/useSessions';
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: session, isLoading } = useSession(id!);
+  const { data: session, isLoading, error } = useSession(id);
   const { remove } = useSessions();
 
   const handleDelete = async () => {
+    if (!id) return;
     if (!confirm('Delete this session?')) return;
-    await remove.mutateAsync(id!);
+    await remove.mutateAsync(id);
     navigate('/sessions');
   };
+
+  if (!id) {
+    return (
+      <PageShell>
+        <p className="text-muted-foreground text-sm">Session not found.</p>
+      </PageShell>
+    );
+  }
 
   if (isLoading) {
     return (
       <PageShell>
         <p className="text-muted-foreground text-sm">Loading session…</p>
+      </PageShell>
+    );
+  }
+
+  if (error) {
+    const is404 = axios.isAxiosError(error) && error.response?.status === 404;
+    if (is404) {
+      return (
+        <PageShell>
+          <p className="text-muted-foreground text-sm">Session not found.</p>
+        </PageShell>
+      );
+    }
+    return (
+      <PageShell>
+        <ErrorMessage error={error} />
       </PageShell>
     );
   }

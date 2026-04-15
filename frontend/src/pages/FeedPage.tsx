@@ -1,12 +1,7 @@
 import Navbar from '../components/layout/Navbar';
-import SessionCard from '../components/shared/SessionCard';
-import ErrorMessage from '../components/shared/ErrorMessage';
-import { useFeed } from '../hooks/useFeed';
 import { TrendingUp, Users, Award, Search } from 'lucide-react';
 
 export default function FeedPage() {
-  const { data, error, isLoading, refetch } = useFeed();
-  const feedItems = data?.pages.flat() ?? [];
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -35,32 +30,10 @@ export default function FeedPage() {
               </div>
             </div>
 
-            {/* Feed content */}
-            {error ? (
-              <div className="bg-white rounded-lg border border-gray-200 py-16 text-center space-y-3">
-                <ErrorMessage error={error} />
-                <button
-                  onClick={() => refetch()}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : isLoading ? (
-              <div className="bg-white rounded-lg border border-gray-200 py-16 text-center">
-                <p className="text-gray-500 text-sm">Loading feed…</p>
-              </div>
-            ) : feedItems.length === 0 ? (
-              <div className="bg-white rounded-lg border border-gray-200 py-16 text-center">
-                <p className="text-gray-500 text-sm">No posts yet. Follow someone to see their activity here.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {feedItems.map((item) => (
-                  <SessionCard key={item.id} session={item} />
-                ))}
-              </div>
-            )}
+            {/* Empty state */}
+            <div className="bg-white rounded-lg border border-gray-200 py-16 text-center">
+              <p className="text-gray-500 text-sm">No posts yet. Follow someone to see their activity here.</p>
+            </div>
           </div>
 
           {/* Sidebar */}

@@ -41,10 +41,10 @@ export function useSessions() {
   };
 }
 
-export function useSession(id: string) {
+export function useSession(id: string | undefined) {
   return useQuery({
     queryKey: ['sessions', id],
-    queryFn: () => getSession(id),
+    queryFn: () => getSession(id!),
     enabled: !!id,
   });
 }
