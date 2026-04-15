@@ -11,7 +11,7 @@ export function useAuth() {
   const meQuery = useQuery({
     queryKey: ['me'],
     queryFn: getMe,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !import.meta.env.DEV,
     staleTime: 5 * 60 * 1000,
   });
 
