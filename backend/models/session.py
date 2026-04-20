@@ -21,6 +21,7 @@ class SessionResponse(SessionCreate):
     id: UUID
     user_id: UUID
     attention_score: float = Field(..., description = "Derived score: 1 - (attention_lost / duration)")
+    focus_score: float = Field(..., description = "Derived score: focused_time / duration")
     created_at: datetime
 
 
@@ -28,6 +29,7 @@ class SessionSummary(BaseModel):
     total_sessions: int
     total_study_seconds: int
     avg_attention_score: float
+    avg_focus_score: float
     avg_eyes_closed_time: float
     avg_face_missing_time: float
     avg_head_pose_off_time: float

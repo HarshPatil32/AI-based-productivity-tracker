@@ -17,6 +17,7 @@ export interface Session extends CreateSessionPayload {
   id: string;           // UUID
   user_id: string;      // UUID
   attention_score: number;
+  focus_score: number;
   created_at: string;
 }
 
@@ -26,6 +27,7 @@ export interface SessionSummary {
   total_sessions: number;
   total_study_seconds: number;
   avg_attention_score: number;
+  avg_focus_score: number;
   avg_eyes_closed_time: number;
   avg_face_missing_time: number;
   avg_head_pose_off_time: number;
