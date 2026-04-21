@@ -17,3 +17,6 @@ export const searchUsers = (query: string) =>
   apiClient
     .get<User[]>('/users/search', { params: { q: query } })
     .then((r) => r.data);
+
+export const getSuggestedUsers = (limit = 5) =>
+  apiClient.get<User[]>(`/users/suggested`, { params: { limit } }).then((r) => r.data);

@@ -118,6 +118,81 @@ async def update_my_profile(
     return _row_to_profile(view_result.data)
 
 
+# --------------- User search ---------------
+
+@router.get(
+    "/search",
+    response_model=List[ProfileResponse],
+    summary="Search users by username or full name",
+)
+async def search_users(
+    q: str = Query("", min_length=0, max_length=100),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_client()
+    pattern = f"%{q}%"
+
+    try:
+        result = (
+            client.table("user_profile_summary")
+            .select("*")
+            .or_(f"username.ilike.{pattern},full_name.ilike.{pattern}")
+            .neq("id", str(current_user.user_id))
+            .limit(limit)
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"User search failed for query '{q}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Search failed",
+        )
+
+    return [_row_to_profile(row) for row in (result.data or [])]
+
+
+
+# --------------- Suggested users ---------------
+
+@router.get(
+    "/suggested",
+    response_model=List[ProfileResponse],
+    summary="Get suggested users to follow",
+)
+async def get_suggested_users(
+    limit: int = Query(5, ge=1, le=20),
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_client()
+    user_id = str(current_user.user_id)
+
+    try:
+        follows_result = (
+            client.table("user_relationships")
+            .select("following_id")
+            .eq("follower_id", user_id)
+            .execute()
+        )
+        following_ids = [row["following_id"] for row in (follows_result.data or [])] + [user_id]
+        # Supabase Python client expects a string like '(id1,id2,...)' for 'in' operator
+        in_str = f"({','.join(following_ids)})" if following_ids else "()"
+        query = client.table("user_profile_summary").select("*")
+        query = query.filter("id", "not.in", in_str)
+        result = (
+            query
+            .order("followers_count", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return [_row_to_profile(row) for row in (result.data or [])]
+    except Exception as e:
+        logger.error(f"/users/suggested failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not get suggested users: {e}",
+        )
+
 # --------------- Public profile lookup ---------------
 
 @router.get(

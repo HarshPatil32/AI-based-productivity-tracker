@@ -1,13 +1,17 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { getFeed } from '../api/feed';
+import { getFeed, getGlobalFeed } from '../api/feed';
 
 const PAGE_SIZE = 20;
 
-export function useFeed() {
+export type FeedType = 'following' | 'global';
+
+export function useFeed(type: FeedType = 'following') {
   return useInfiniteQuery({
-    queryKey: ['feed'],
+    queryKey: ['feed', type],
     queryFn: ({ pageParam = 0 }) =>
-      getFeed(PAGE_SIZE, pageParam as number),
+      type === 'global'
+        ? getGlobalFeed(PAGE_SIZE, pageParam as number)
+        : getFeed(PAGE_SIZE, pageParam as number),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
       lastPage.length === PAGE_SIZE ? allPages.length * PAGE_SIZE : undefined,

@@ -138,3 +138,24 @@ class TestUpdateMySettings:
     def test_patch_settings_no_auth(self, client):
         resp = client.patch(f"{BASE}/me/settings", json={"theme": "dark"})
         assert resp.status_code == 401
+
+
+class TestGetSuggestedUsers:
+    def test_get_suggested_users_success(self, client, user1_headers, user1_creds, user2_creds):
+        resp = client.get(f"{BASE}/suggested", headers=user1_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        # Should not include self
+        assert all(u["username"] != user1_creds["username"] for u in data)
+        # Should not include already-followed users
+        followed_usernames = [user2_creds["username"]]
+        assert all(u["username"] not in followed_usernames for u in data)
+
+    def test_get_suggested_users_no_auth(self, client):
+        resp = client.get(f"{BASE}/suggested")
+        assert resp.status_code == 401
+
+    def test_get_suggested_users_limit(self, client, user1_headers):
+        resp = client.get(f"{BASE}/suggested?limit=2", headers=user1_headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) <= 2
