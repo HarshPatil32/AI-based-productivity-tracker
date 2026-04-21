@@ -2,20 +2,20 @@ import apiClient from './client';
 import type { FollowRelation } from '../types/feed';
 import type { User } from '../types/auth';
 
-export const follow = (followeeId: number) =>
+export const follow = (followeeId: string) =>
   apiClient
-    .post<FollowRelation>(`/follows/${followeeId}`)
+    .post<FollowRelation>(`/users/${followeeId}/follow`)
     .then((r) => r.data);
 
-export const unfollow = (followeeId: number) =>
-  apiClient.delete(`/follows/${followeeId}`).then((r) => r.data);
+export const unfollow = (followeeId: string) =>
+  apiClient.delete(`/users/${followeeId}/follow`).then((r) => r.data);
 
-export const getFollowers = (username: string) =>
+export const getFollowers = (userId: string, limit = 20, offset = 0) =>
   apiClient
-    .get<User[]>(`/users/${username}/followers`)
+    .get<User[]>(`/users/${userId}/followers`, { params: { limit, offset } })
     .then((r) => r.data);
 
-export const getFollowing = (username: string) =>
+export const getFollowing = (userId: string, limit = 20, offset = 0) =>
   apiClient
-    .get<User[]>(`/users/${username}/following`)
+    .get<User[]>(`/users/${userId}/following`, { params: { limit, offset } })
     .then((r) => r.data);

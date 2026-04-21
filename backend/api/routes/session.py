@@ -211,6 +211,42 @@ async def get_my_summary(
     )
 
 
+# GET /sessions/user/{user_id}  – another user's public sessions
+
+@router.get(
+    "/user/{user_id}",
+    response_model=List[SessionResponse],
+    summary="Get a user's public sessions",
+)
+async def get_user_sessions(
+    user_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_client()
+    target_id = str(user_id)
+
+    try:
+        result = (
+            client.table("study_sessions")
+            .select("*")
+            .eq("user_id", target_id)
+            .eq("is_public", True)
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch sessions for user {target_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve sessions",
+        )
+
+    return [_to_session_response(row) for row in result.data]
+
+
 # GET /sessions/{session_id}  – single session
 
 @router.get(
