@@ -103,3 +103,10 @@ class TestGlobalFeed:
         page2 = client.get(f"{FEED_BASE}/global?limit=1&offset=1", headers=user1_headers).json()
         if len(page1) > 0 and len(page2) > 0:
             assert page1[0]["id"] != page2[0]["id"]
+
+    def test_feed_no_duplicate_sessions_across_pages(self, client, user1_headers):
+        # Fetch two pages and ensure no duplicate session IDs
+        page1 = client.get(f"{FEED_BASE}/?limit=2&offset=0", headers=user1_headers).json()
+        page2 = client.get(f"{FEED_BASE}/?limit=2&offset=2", headers=user1_headers).json()
+        ids = [s["id"] for s in page1 + page2]
+        assert len(ids) == len(set(ids)), "Duplicate session IDs found across paginated feed pages"

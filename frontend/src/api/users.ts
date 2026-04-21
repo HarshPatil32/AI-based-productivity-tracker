@@ -11,9 +11,12 @@ export const getUserProfile = (username: string) =>
   apiClient.get<User>(`/users/${username}`).then((r) => r.data);
 
 export const updateProfile = (payload: UpdateProfilePayload) =>
-  apiClient.put<User>('/users/me', payload).then((r) => r.data);
+  apiClient.patch<User>('/users/me', payload).then((r) => r.data);
 
 export const searchUsers = (query: string) =>
   apiClient
     .get<User[]>('/users/search', { params: { q: query } })
     .then((r) => r.data);
+
+export const getSuggestedUsers = (limit = 5) =>
+  apiClient.get<User[]>(`/users/suggested`, { params: { limit } }).then((r) => r.data);

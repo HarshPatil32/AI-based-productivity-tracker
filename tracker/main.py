@@ -1,5 +1,8 @@
 import logging
 import time
+from datetime import datetime, timezone
+
+import httpx
 
 from attention import detect_attention
 from config import CAMERA_INDEX, BACKEND_URL, AUTH_TOKEN
@@ -36,6 +39,41 @@ def calculate_productivity_metrics(attention_metrics, session_duration):
         'quality': quality
     }
 
+def post_session(payload: dict, backend_url: str | None, auth_token: str | None) -> None:
+    if not auth_token:
+        logger.warning("AUTH_TOKEN is not set — session will not be saved. Add AUTH_TOKEN to .env.")
+        return
+    if not backend_url:
+        logger.warning("BACKEND_URL is not set — session will not be saved. Add BACKEND_URL to .env.")
+        return
+
+    url = f"{backend_url.rstrip('/')}/api/v1/sessions/"
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    try:
+        response = httpx.post(url, json=payload, headers=headers, timeout=10)
+    except httpx.RequestError as exc:
+        logger.error("Network error while saving session: %s", exc)
+        print(f"Could not reach backend ({url}): {exc}")
+        return
+
+    if response.status_code == 201:
+        session_id = response.json().get("id", "<unknown>")
+        print(f"Session saved. ID: {session_id}")
+    elif response.status_code == 401:
+        print("Session not saved: unauthenticated. Check AUTH_TOKEN in .env.")
+    elif response.status_code == 422:
+        try:
+            detail = response.json().get("detail", response.text[:200])
+        except Exception:
+            detail = response.text[:200]
+        print(f"Session not saved: validation error — {detail}")
+    else:
+        content_type = response.headers.get("content-type", "")
+        snippet = response.text[:200] if content_type.startswith("text") else "<binary body>"
+        print(f"Session not saved: HTTP {response.status_code} — {snippet}")
+
+
 if __name__ == "__main__":
     # Record session start time
     session_start_time = time.time()
@@ -67,3 +105,18 @@ if __name__ == "__main__":
     print(f"Session Quality: {productivity['quality']}")
     
     print("\n========= SESSION COMPLETE =========")
+
+    if int(session_duration) >= 1:
+        session_payload = {
+            "started_at": datetime.fromtimestamp(session_start_time, tz=timezone.utc).isoformat(),
+            "ended_at": datetime.fromtimestamp(session_end_time, tz=timezone.utc).isoformat(),
+            "duration_seconds": int(round(session_duration)),
+            "eyes_closed_time": attention_metrics["eyes_closed_time"],
+            "face_missing_time": attention_metrics["face_missing_time"],
+            "head_pose_off_time": attention_metrics["head_pose_off_time"],
+            "total_attention_lost": attention_metrics["total_attention_lost"],
+            "notes": None,
+        }
+        post_session(session_payload, BACKEND_URL, AUTH_TOKEN)
+    else:
+        logger.info("Session too short to save (< 1 second).")

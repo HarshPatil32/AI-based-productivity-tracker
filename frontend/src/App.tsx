@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider, useAuthStore } from './store/authStore';
+import { AuthProvider } from './store/authStore';
+import ErrorBoundary from './components/ErrorBoundary';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -19,9 +20,26 @@ const queryClient = new QueryClient({
   },
 });
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { token } = useAuthStore();
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+function AppRoutes() {
+  const { pathname } = useLocation();
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+
+      {/* Protected routes (auth temporarily disabled) */}
+      <Route path="/dashboard" element={<ErrorBoundary key={pathname}><DashboardPage /></ErrorBoundary>} />
+      <Route path="/feed" element={<ErrorBoundary key={pathname}><FeedPage /></ErrorBoundary>} />
+      <Route path="/sessions" element={<ErrorBoundary key={pathname}><SessionsPage /></ErrorBoundary>} />
+      <Route path="/sessions/:id" element={<ErrorBoundary key={pathname}><SessionDetailPage /></ErrorBoundary>} />
+      <Route path="/profile/:username" element={<ErrorBoundary key={pathname}><ProfilePage /></ErrorBoundary>} />
+
+      {/* Default redirect */}
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
 }
 
 export default function App() {
@@ -29,22 +47,7 @@ export default function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-
-          {/* Protected routes (auth temporarily disabled) */}
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/feed" element={<FeedPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-          <Route path="/sessions/:id" element={<SessionDetailPage />} />
-          <Route path="/profile/:username" element={<ProfilePage />} />
-
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+          <AppRoutes />
         </BrowserRouter>
       </QueryClientProvider>
     </AuthProvider>

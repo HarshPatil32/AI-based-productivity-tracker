@@ -30,8 +30,23 @@ _config_stub.YAW_OFFSET = 145.0
 _config_stub.SHOW_OVERLAY = False
 _config_stub.model_points = None
 _config_stub.CAMERA_INDEX = 0
-for _name in ("face_utils", "camera", "config"):
-    sys.modules.setdefault(_name, _config_stub if _name == "config" else MagicMock())
+_config_stub.BACKEND_URL = "http://localhost:8000"
+_config_stub.AUTH_TOKEN = None
+
+_attention_stub = types.ModuleType("attention")
+_attention_stub.detect_attention = MagicMock(return_value={
+    "eyes_closed_time": 0,
+    "face_missing_time": 0,
+    "head_pose_off_time": 0,
+    "total_attention_lost": 0,
+})
+for _name in ("face_utils", "camera", "config", "attention"):
+    sys.modules.setdefault(
+        _name,
+        _config_stub if _name == "config"
+        else _attention_stub if _name == "attention"
+        else MagicMock(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -201,3 +216,114 @@ def test_track_face_does_not_exist():
     assert not os.path.exists(os.path.join(tracker_dir, "track_face.py")), (
         "track_face.py was re-introduced; remove it and use attention.py instead"
     )
+
+
+# ---------------------------------------------------------------------------
+# post_session — unit tests (no real HTTP calls)
+# ---------------------------------------------------------------------------
+
+from unittest.mock import patch, MagicMock as _MagicMock
+from tracker.main import post_session
+
+_SAMPLE_PAYLOAD = {
+    "started_at": "2026-04-15T10:00:00+00:00",
+    "ended_at": "2026-04-15T10:30:00+00:00",
+    "duration_seconds": 1800,
+    "eyes_closed_time": 10.0,
+    "face_missing_time": 5.0,
+    "head_pose_off_time": 8.0,
+    "total_attention_lost": 23.0,
+    "notes": None,
+}
+
+
+def _mock_response(status_code: int, json_data: dict | None = None, text: str = "", content_type: str = "application/json"):
+    resp = _MagicMock()
+    resp.status_code = status_code
+    resp.text = text
+    resp.json.return_value = json_data or {}
+    resp.headers = {"content-type": content_type}
+    return resp
+
+
+def test_post_session_skips_when_no_auth_token(capsys):
+    post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", None)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_post_session_skips_when_empty_auth_token(capsys):
+    post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_post_session_skips_when_no_backend_url(capsys):
+    post_session(_SAMPLE_PAYLOAD, None, "sometoken")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_post_session_skips_when_empty_backend_url(capsys):
+    post_session(_SAMPLE_PAYLOAD, "", "sometoken")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_post_session_prints_id_on_201(capsys):
+    mock_resp = _mock_response(201, json_data={"id": "abc-123"})
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "token")
+    captured = capsys.readouterr()
+    assert "abc-123" in captured.out
+    mock_post.assert_called_once()
+
+
+def test_post_session_uses_bearer_auth():
+    mock_resp = _mock_response(201, json_data={"id": "x"})
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "mytoken")
+    _, kwargs = mock_post.call_args
+    assert kwargs["headers"]["Authorization"] == "Bearer mytoken"
+
+
+def test_post_session_strips_trailing_slash_from_url():
+    mock_resp = _mock_response(201, json_data={"id": "x"})
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000/", "token")
+    url = mock_post.call_args[0][0]
+    assert not url.startswith("http://localhost:8000//")
+
+
+def test_post_session_prints_unauth_message_on_401(capsys):
+    mock_resp = _mock_response(401, text="Unauthorized")
+    with patch("httpx.post", return_value=mock_resp):
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "badtoken")
+    captured = capsys.readouterr()
+    assert "unauthenticated" in captured.out.lower() or "AUTH_TOKEN" in captured.out
+
+
+def test_post_session_prints_detail_on_422_json(capsys):
+    mock_resp = _mock_response(422, json_data={"detail": "duration_seconds must be >= 0"})
+    with patch("httpx.post", return_value=mock_resp):
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "token")
+    captured = capsys.readouterr()
+    assert "duration_seconds must be >= 0" in captured.out
+
+
+def test_post_session_handles_422_non_json_body(capsys):
+    mock_resp = _mock_response(422, text="<html>Bad Request</html>", content_type="text/html")
+    mock_resp.json.side_effect = ValueError("No JSON")
+    with patch("httpx.post", return_value=mock_resp):
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "token")
+    captured = capsys.readouterr()
+    # Must not raise; must print something about the error
+    assert "422" in captured.out or "validation" in captured.out.lower() or "Bad Request" in captured.out
+
+
+def test_post_session_handles_network_error(capsys):
+    import httpx as _httpx
+    with patch("httpx.post", side_effect=_httpx.RequestError("Connection refused")):
+        post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "token")
+    captured = capsys.readouterr()
+    assert "Connection refused" in captured.out or "Could not reach" in captured.out

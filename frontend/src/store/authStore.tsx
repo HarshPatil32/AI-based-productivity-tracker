@@ -1,6 +1,15 @@
 import { createContext, useContext, useState } from "react"
 import type { User } from "@/types/auth"
 
+const DEV_USER: User = {
+  id: "dev-user",
+  email: "dev@focustrack.local",
+  username: "dev",
+  created_at: new Date().toISOString(),
+}
+
+const DEV_TOKEN = "dev-token"
+
 interface AuthState {
   user: User | null
   token: string | null
@@ -11,9 +20,11 @@ interface AuthState {
 export const AuthContext = createContext<AuthState>({} as AuthState)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<User | null>(
+    import.meta.env.DEV ? DEV_USER : null
+  )
   const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem("access_token")
+    () => import.meta.env.DEV ? DEV_TOKEN : localStorage.getItem("access_token")
   )
 
   const setAuth = (u: User, t: string) => {

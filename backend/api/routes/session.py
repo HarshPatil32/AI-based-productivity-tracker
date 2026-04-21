@@ -81,6 +81,7 @@ def _to_session_response(row: dict) -> dict:
         "total_attention_lost": row.get("attention_lost", 0),
         "notes": row.get("description"),
         "attention_score": row.get("attention_score", 0.0),
+        "focus_score": row.get("focus_score", 0.0),
         "created_at": row.get("created_at"),
     }
 
@@ -171,7 +172,7 @@ async def get_my_summary(
         result = (
             client.table("study_sessions")
             .select(
-                "session_duration, attention_score, eyes_closed_time, "
+                "session_duration, attention_score, focus_score, eyes_closed_time, "
                 "face_missing_time, head_pose_off_time, attention_lost"
             )
             .eq("user_id", user_id)
@@ -190,6 +191,7 @@ async def get_my_summary(
             total_sessions=0,
             total_study_seconds=0,
             avg_attention_score=0.0,
+            avg_focus_score=0.0,
             avg_eyes_closed_time=0.0,
             avg_face_missing_time=0.0,
             avg_head_pose_off_time=0.0,
@@ -201,11 +203,48 @@ async def get_my_summary(
         total_sessions=n,
         total_study_seconds=sum(r["session_duration"] for r in rows),
         avg_attention_score=round(sum(r.get("attention_score", 0) for r in rows) / n, 2),
+        avg_focus_score=round(sum(r.get("focus_score", 0) for r in rows) / n, 2),
         avg_eyes_closed_time=round(sum(r.get("eyes_closed_time", 0) for r in rows) / n, 2),
         avg_face_missing_time=round(sum(r.get("face_missing_time", 0) for r in rows) / n, 2),
         avg_head_pose_off_time=round(sum(r.get("head_pose_off_time", 0) for r in rows) / n, 2),
         total_attention_lost=round(sum(r.get("attention_lost", 0) for r in rows), 2),
     )
+
+
+# GET /sessions/user/{user_id}  – another user's public sessions
+
+@router.get(
+    "/user/{user_id}",
+    response_model=List[SessionResponse],
+    summary="Get a user's public sessions",
+)
+async def get_user_sessions(
+    user_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_client()
+    target_id = str(user_id)
+
+    try:
+        result = (
+            client.table("study_sessions")
+            .select("*")
+            .eq("user_id", target_id)
+            .eq("is_public", True)
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch sessions for user {target_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve sessions",
+        )
+
+    return [_to_session_response(row) for row in result.data]
 
 
 # GET /sessions/{session_id}  – single session

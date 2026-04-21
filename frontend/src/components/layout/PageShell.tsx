@@ -12,7 +12,7 @@ export default function PageShell({ children, sidebar = true }: PageShellProps) 
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <div className="flex flex-1 pt-14">
+      <div className="flex flex-1">
         {sidebar && <Sidebar />}
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
