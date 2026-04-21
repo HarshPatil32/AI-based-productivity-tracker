@@ -40,6 +40,7 @@ _attention_stub.detect_attention = MagicMock(return_value={
     "head_pose_off_time": 0,
     "total_attention_lost": 0,
 })
+
 for _name in ("face_utils", "camera", "config", "attention"):
     sys.modules.setdefault(
         _name,
@@ -223,7 +224,7 @@ def test_track_face_does_not_exist():
 # ---------------------------------------------------------------------------
 
 from unittest.mock import patch, MagicMock as _MagicMock
-from tracker.main import post_session
+from tracker.main import post_session, calculate_productivity_metrics
 
 _SAMPLE_PAYLOAD = {
     "started_at": "2026-04-15T10:00:00+00:00",
@@ -327,3 +328,177 @@ def test_post_session_handles_network_error(capsys):
         post_session(_SAMPLE_PAYLOAD, "http://localhost:8000", "token")
     captured = capsys.readouterr()
     assert "Connection refused" in captured.out or "Could not reach" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# eye_aspect_ratio — pure geometry, no dlib model required
+# ---------------------------------------------------------------------------
+
+# Each eye is a list of 6 (x, y) tuples: [p0, p1, p2, p3, p4, p5]
+# Formula: EAR = (||p1-p5|| + ||p2-p4||) / (2 * ||p0-p3||)
+
+def test_ear_symmetric_open_eye():
+    from tracker.face_utils import eye_aspect_ratio
+    # Perfectly symmetric eye: vertical distances equal the horizontal width.
+    # A = dist(p1, p5) = 2, B = dist(p2, p4) = 2, C = dist(p0, p3) = 2
+    # EAR = (2+2)/(2*2) = 1.0
+    eye = [(0, 0), (0, 1), (1, 1), (2, 0), (1, -1), (0, -1)]
+    assert eye_aspect_ratio(eye) == pytest.approx(1.0)
+
+
+def test_ear_fully_closed_eye():
+    from tracker.face_utils import eye_aspect_ratio
+    # All landmarks on the horizontal axis — zero vertical distances.
+    # EAR = 0.0
+    eye = [(0, 0), (1, 0), (2, 0), (4, 0), (2, 0), (1, 0)]
+    assert eye_aspect_ratio(eye) == pytest.approx(0.0)
+
+
+def test_ear_known_ratio():
+    from tracker.face_utils import eye_aspect_ratio
+    # A = dist((1,2),(1,-2)) = 4, B = dist((2,2),(2,-2)) = 4, C = dist((0,0),(6,0)) = 6
+    # EAR = (4+4)/(2*6) = 8/12 = 2/3
+    eye = [(0, 0), (1, 2), (2, 2), (6, 0), (2, -2), (1, -2)]
+    assert eye_aspect_ratio(eye) == pytest.approx(2 / 3)
+
+
+def test_ear_below_default_threshold_for_near_closed_eye():
+    from tracker.face_utils import eye_aspect_ratio
+    # Tiny vertical gaps relative to horizontal width → EAR well below 0.2.
+    eye = [(0, 0), (1, 0.1), (2, 0.1), (4, 0), (2, -0.1), (1, -0.1)]
+    assert eye_aspect_ratio(eye) < 0.2
+
+
+def test_ear_above_default_threshold_for_open_eye():
+    from tracker.face_utils import eye_aspect_ratio
+    # Clearly open eye geometry → EAR well above 0.2.
+    eye = [(0, 0), (0, 1), (1, 1), (2, 0), (1, -1), (0, -1)]
+    assert eye_aspect_ratio(eye) > 0.2
+
+
+def test_ear_division_by_zero():
+    from tracker.face_utils import eye_aspect_ratio
+    # Horizontal width is zero (p0 == p3), should not raise ZeroDivisionError.
+    eye = [(1, 0), (1, 1), (1, 2), (1, 0), (1, -1), (1, -2)]
+    try:
+        result = eye_aspect_ratio(eye)
+    except ZeroDivisionError:
+        pytest.fail("eye_aspect_ratio() raised ZeroDivisionError on zero horizontal width")
+    # Accept 0.0, np.nan, or np.inf, but must not crash
+    import math
+    assert (
+        result == 0.0
+        or (hasattr(result, "__eq__") and result != result)  # np.nan != np.nan
+        or math.isinf(result)
+    )
+
+
+# ---------------------------------------------------------------------------
+# calculate_productivity_metrics — scores and quality tier boundaries
+# ---------------------------------------------------------------------------
+
+def _metrics(duration, attention_lost):
+    """Convenience wrapper: build the attention_metrics dict and call the function."""
+    return calculate_productivity_metrics(
+        {"total_attention_lost": attention_lost},
+        duration,
+    )
+
+
+# -- focus_score and attention_score --
+
+def test_metrics_no_distraction_scores_100():
+    result = _metrics(duration=100, attention_lost=0)
+    assert result["focus_score"] == pytest.approx(100.0)
+    assert result["attention_score"] == pytest.approx(100.0)
+
+
+def test_metrics_attention_score_equals_focus_score():
+    result = _metrics(duration=200, attention_lost=50)
+    assert result["focus_score"] == result["attention_score"]
+
+
+def test_metrics_work_time_is_duration_minus_attention_lost():
+    result = _metrics(duration=3600, attention_lost=360)
+    assert result["work_time"] == pytest.approx(3240.0)
+
+
+# -- quality tier boundaries --
+
+def test_metrics_exactly_90_percent_is_excellent():
+    # focus_score = (90/100)*100 = 90.0 → "Excellent"
+    result = _metrics(duration=100, attention_lost=10)
+    assert result["focus_score"] == pytest.approx(90.0)
+    assert result["quality"] == "Excellent"
+
+
+def test_metrics_below_90_percent_is_good():
+    # focus_score = 89.0 → "Good"
+    result = _metrics(duration=100, attention_lost=11)
+    assert result["focus_score"] == pytest.approx(89.0)
+    assert result["quality"] == "Good"
+
+
+def test_metrics_exactly_75_percent_is_good():
+    # focus_score = 75.0 → "Good"
+    result = _metrics(duration=100, attention_lost=25)
+    assert result["focus_score"] == pytest.approx(75.0)
+    assert result["quality"] == "Good"
+
+
+def test_metrics_below_75_percent_is_fair():
+    # focus_score = 74.0 → "Fair"
+    result = _metrics(duration=100, attention_lost=26)
+    assert result["focus_score"] == pytest.approx(74.0)
+    assert result["quality"] == "Fair"
+
+
+def test_metrics_exactly_60_percent_is_fair():
+    # focus_score = 60.0 → "Fair"
+    result = _metrics(duration=100, attention_lost=40)
+    assert result["focus_score"] == pytest.approx(60.0)
+    assert result["quality"] == "Fair"
+
+
+def test_metrics_below_60_percent_is_poor():
+    # focus_score = 59.0 → "Poor"
+    result = _metrics(duration=100, attention_lost=41)
+    assert result["focus_score"] == pytest.approx(59.0)
+    assert result["quality"] == "Poor"
+
+
+def test_metrics_100_percent_distraction_is_poor():
+    result = _metrics(duration=100, attention_lost=100)
+    assert result["focus_score"] == pytest.approx(0.0)
+    assert result["quality"] == "Poor"
+
+
+# -- edge cases --
+
+def test_metrics_zero_duration_returns_zero_focus_score():
+    # Guard against division by zero.
+    result = _metrics(duration=0, attention_lost=0)
+    assert result["focus_score"] == pytest.approx(0.0)
+    assert result["quality"] == "Poor"
+
+
+def test_metrics_zero_duration_returns_zero_work_time():
+    result = _metrics(duration=0, attention_lost=0)
+    assert result["work_time"] == pytest.approx(0.0)
+
+
+def test_metrics_attention_lost_exceeds_duration_clamps_work_time_to_zero():
+    # When distraction time is recorded longer than the session (e.g. clock drift),
+    # work_time must not go negative.
+    result = _metrics(duration=60, attention_lost=100)
+    assert result["work_time"] == pytest.approx(0.0)
+    assert result["focus_score"] == pytest.approx(0.0)
+
+
+def test_metrics_payload_keys_are_complete():
+    result = _metrics(duration=100, attention_lost=20)
+    expected_keys = {
+        "session_duration", "work_time", "distracted_time",
+        "attention_lost", "focus_score", "attention_score", "quality",
+    }
+    assert expected_keys.issubset(result.keys())
