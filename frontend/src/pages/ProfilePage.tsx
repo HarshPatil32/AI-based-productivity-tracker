@@ -9,8 +9,17 @@ import { useAuth } from '../hooks/useAuth';
 import type { User } from '../types/auth';
 
 type SlimUser = Pick<User, 'id' | 'username' | 'full_name' | 'avatar_url'>;
+import { useEffect } from 'react';
 
-import { useEffect, useRef, useState } from 'react';
+// --- Add stubs for getFollowers and getFollowing ---
+const getFollowers = async (userId: string, limit: number, offset: number) => {
+  // TODO: Replace with real API call
+  return [];
+};
+const getFollowing = async (userId: string, limit: number, offset: number) => {
+  // TODO: Replace with real API call
+  return [];
+};
 function UserListModal({
   title,
   userId,
@@ -56,7 +65,7 @@ function UserListModal({
 
   // Infinite scroll
   useEffect(() => {
-    const handleScroll = (e: Event) => {
+    const handleScroll = () => {
       const el = listRef.current;
       if (!el || loading || !hasMore) return;
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 20) {
