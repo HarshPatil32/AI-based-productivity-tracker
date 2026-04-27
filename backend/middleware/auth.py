@@ -51,12 +51,8 @@ class AuthMiddleware (BaseHTTPMiddleware):
         return await call_next(request)
 
     def _is_public_path(self, path):
-        if path in self.PUBLIC_PATHS:
-            return True
-        for public_path in self.PUBLIC_PATHS:
-            if public_path.endswith("/") and path.startswith(public_path):
-                return True
-        return False
+        # Only allow exact matches for public paths
+        return path in self.PUBLIC_PATHS
 
 class AuthenticationRequired:
     def __init__(self, auto_error: bool = True):
