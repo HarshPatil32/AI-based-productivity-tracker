@@ -21,48 +21,60 @@ def verify_password(plain_password: str, hashed_password: str):
 
 def create_access_token(user_id: UUID, email: str, expires_delta: Optional[timedelta] = None):
     # Creates JWT access token
+    now = datetime.now(timezone.utc)
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
 
     payload = {
         "sub": str(user_id),
         "email": email,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": now,
         "type": "access"
-                }
-    
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    }
+
+    import logging
+    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    logging.warning(f"[DEBUG] Creating access token: now={now}, exp={expire}, payload={payload}, token={token}")
+    return token
 
 def create_refresh_token(user_id: UUID, email: str, expires_delta: Optional[timedelta] = None):
+    now = datetime.now(timezone.utc)
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(days=30)  # refresh token lasts 30 days
+        expire = now + timedelta(days=30)
 
     payload = {
         "sub": str(user_id),
         "email": email,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": now,
         "type": "refresh"
     }
 
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    import logging
+    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    logging.warning(f"[DEBUG] Creating refresh token: now={now}, exp={expire}, payload={payload}, token={token}")
+    return token
 
 
 def decode_token(token: str):
+    import logging
     try:
+        logging.warning(f"[DEBUG] Decoding token string: {token}")
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM]
         )
         user_id = payload.get("sub")
-        email=payload.get("email")
+        email = payload.get("email")
         exp = payload.get("exp")
+        now = datetime.now(timezone.utc)
+        logging.warning(f"[DEBUG] Decoding token: now={now}, exp={exp}, payload={payload}")
 
         if user_id is None:
             raise HTTPException(
@@ -70,21 +82,20 @@ def decode_token(token: str):
                 detail="Invalid token: missing user ID",
                 headers = {"WWW-Authenticate": "Bearer"}
             )
-        
         return TokenData(
             user_id = UUID(user_id),
-            email=email,
+            email = email,
             exp = datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None
         )
-    
     except jwt.ExpiredSignatureError:
+        logging.warning("[DEBUG] Token has expired!")
         raise HTTPException(
             status_code = status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    
     except jwt.InvalidTokenError:
+        logging.warning("[DEBUG] Invalid token!")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",

@@ -16,7 +16,7 @@ export default function LoginPage() {
   const { mutate, isPending, error } = useMutation({
     mutationFn: () => login({ email, password }),
     onSuccess: (data) => {
-      setAuth(data.user, data.access_token)
+      setAuth(data.data.user, data.data.access_token)
       navigate("/feed")
     },
   })

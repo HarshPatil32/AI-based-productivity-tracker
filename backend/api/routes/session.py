@@ -133,7 +133,7 @@ async def get_my_sessions(
     offset: int = Query(0, ge=0),
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     user_id = str(current_user.user_id)
 
     try:
@@ -165,7 +165,7 @@ async def get_my_sessions(
 async def get_my_summary(
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     user_id = str(current_user.user_id)
 
     try:
@@ -224,7 +224,7 @@ async def get_user_sessions(
     offset: int = Query(0, ge=0),
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     target_id = str(user_id)
 
     try:
@@ -258,7 +258,7 @@ async def get_session(
     session_id: UUID,
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     user_id = str(current_user.user_id)
 
     try:

@@ -11,6 +11,8 @@ before running. Run with:
 import uuid
 import pytest
 from fastapi.testclient import TestClient
+import sys
+from unittest.mock import MagicMock
 
 from backend.main import app
 
@@ -109,3 +111,11 @@ def sample_session_payload():
         "total_attention_lost": 270.0,
         "notes": "Pytest integration test session",
     }
+
+
+# Ensure dlib is always mocked for all tests that import face_utils
+@pytest.fixture(autouse=True, scope="session")
+def _mock_dlib():
+    sys.modules["dlib"] = MagicMock()
+    yield
+    sys.modules.pop("dlib", None)

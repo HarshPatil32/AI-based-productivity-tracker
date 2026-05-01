@@ -55,17 +55,29 @@ async def register (user_data: UserRegisterModel):
                 detail="Username already taken"
             )
         
-        auth_response = client.auth.admin.create_user(
-            {
-                "email": user_data.email,
-                "password": user_data.password,
-                "email_confirm": True,
-                "user_metadata": {
-                    "username": user_data.username,
-                    "full_name": user_data.full_name
+        try:
+            auth_response = client.auth.admin.create_user(
+                {
+                    "email": user_data.email,
+                    "password": user_data.password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "username": user_data.username,
+                        "full_name": user_data.full_name
+                    }
                 }
-            }
-        )
+            )
+        except Exception as auth_err:
+            err_msg = str(auth_err).lower()
+            if "already registered" in err_msg or "already been registered" in err_msg:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="An account with this email address already exists"
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to create user account"
+            )
 
         if not auth_response.user:
             raise HTTPException(
@@ -157,8 +169,8 @@ async def login (credentials: UserLogin):
         user = auth_response.user
         user_id = user.id
 
-        profile_response = client.table("profiles").select("*").eq("id", str(user_id)).single().execute()
-        profile = profile_response.data if profile_response.data else {}
+        profile_response = client.table("profiles").select("*").eq("id", str(user_id)).limit(1).execute()
+        profile = profile_response.data[0] if profile_response.data else {}
 
         # Generate tokens
         access_token = create_access_token(user_id=UUID(str(user_id)), email=credentials.email)
@@ -193,7 +205,7 @@ async def login (credentials: UserLogin):
                 status_code = status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
-    
+
 
 @router.post("/logout", response_model=AuthResponse)
 async def logout(request: Request, current_user: TokenData = Depends(require_auth)):

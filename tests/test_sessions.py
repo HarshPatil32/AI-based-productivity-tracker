@@ -134,3 +134,139 @@ class TestDeleteSession:
         fake_id = "00000000-0000-0000-0000-000000000000"
         resp = client.delete(f"{BASE}/{fake_id}", headers=user1_headers)
         assert resp.status_code == 404
+
+
+
+# --------------- Privacy helpers ---------------
+
+def _follow_user(client, follower_headers, followee_id):
+    resp = client.post(f"/api/v1/users/{followee_id}/follow", headers=follower_headers)
+    assert resp.status_code in (200, 201)
+
+def _unfollow_user(client, follower_headers, followee_id):
+    resp = client.delete(f"/api/v1/users/{followee_id}/follow", headers=follower_headers)
+    # 204 = success, 404 = not following
+    assert resp.status_code in (204, 404)
+
+@pytest.fixture()
+def user2_privacy_session(client, user2_headers, sample_session_payload):
+    """A session owned by user2, used to verify visibility enforcement."""
+    resp = client.post(f"{BASE}/", json=sample_session_payload, headers=user2_headers)
+    assert resp.status_code == 201, f"user2 session creation failed: {resp.text}"
+    session = resp.json()
+    yield session
+    client.delete(f"{BASE}/{session['id']}", headers=user2_headers)
+
+
+# --------------- Privacy tests ---------------
+
+SETTINGS_BASE = "/api/v1/users"
+
+
+class TestSessionPrivacy:
+    """
+    Verify that session_visibility in user_settings gates what other users
+    and the feed can see. Three values are tested: public (baseline), private,
+    and friends (follow-only).
+
+    Expected behaviour when NOT yet enforced by the backend: these tests will
+    fail, surfacing the gap in privacy implementation.
+    """
+
+    def _set_session_visibility(self, client, headers, value):
+        resp = client.patch(
+            f"{SETTINGS_BASE}/me/settings",
+            json={"session_visibility": value},
+            headers=headers,
+        )
+        assert resp.status_code == 200, (
+            f"Failed to set session_visibility={value}: {resp.text}"
+        )
+
+    def test_private_sessions_hidden_from_other_user(
+        self, client, user2_headers, user2_id, user1_headers, user2_privacy_session
+    ):
+        """user1 must not see user2's sessions when session_visibility=private."""
+        self._set_session_visibility(client, user2_headers, "private")
+        try:
+            resp = client.get(f"{BASE}/user/{user2_id}", headers=user1_headers)
+            assert resp.status_code == 200
+            sessions = resp.json()
+            assert all(s["user_id"] != user2_id for s in sessions), "Private sessions must not be visible to other users"
+        finally:
+            self._set_session_visibility(client, user2_headers, "public")
+
+    def test_private_sessions_visible_to_owner(
+        self, client, user2_headers, user2_privacy_session
+    ):
+        """Owner must always access their own sessions even when visibility=private."""
+        self._set_session_visibility(client, user2_headers, "private")
+        try:
+            resp = client.get(f"{BASE}/me", headers=user2_headers)
+            assert resp.status_code == 200
+            ids = [s["id"] for s in resp.json()]
+            assert user2_privacy_session["id"] in ids
+        finally:
+            self._set_session_visibility(client, user2_headers, "public")
+
+    def test_private_sessions_not_in_feed(
+        self, client, user2_headers, user2_id, user1_headers, user2_privacy_session
+    ):
+        """user2's sessions must not appear in user1's feed when visibility=private."""
+        _follow_user(client, user1_headers, user2_id)
+        self._set_session_visibility(client, user2_headers, "private")
+        try:
+            resp = client.get("/api/v1/feed/", headers=user1_headers)
+            assert resp.status_code == 200
+            user2_session_ids = {
+                s["id"] for s in resp.json() if s["user_id"] == user2_id
+            }
+            assert user2_session_ids == set(), (
+                "Private sessions must not appear in another user's feed"
+            )
+        finally:
+            self._set_session_visibility(client, user2_headers, "public")
+            _unfollow_user(client, user1_headers, user2_id)
+
+    def test_friends_sessions_hidden_from_stranger(
+        self, client, user2_headers, user2_id, user1_headers, user2_privacy_session
+    ):
+        """Non-follower must not see user2's sessions when session_visibility=friends."""
+        _unfollow_user(client, user1_headers, user2_id)
+        self._set_session_visibility(client, user2_headers, "friends")
+        try:
+            resp = client.get(f"{BASE}/user/{user2_id}", headers=user1_headers)
+            assert resp.status_code == 200
+            sessions = resp.json()
+            assert all(s["user_id"] != user2_id for s in sessions), (
+                "Strangers must not see sessions when visibility=friends"
+            )
+        finally:
+            self._set_session_visibility(client, user2_headers, "public")
+
+    def test_friends_sessions_visible_to_follower(
+        self, client, user2_headers, user2_id, user1_headers, user2_privacy_session
+    ):
+        """Follower must see user2's sessions when session_visibility=friends."""
+        _follow_user(client, user1_headers, user2_id)
+        self._set_session_visibility(client, user2_headers, "friends")
+        try:
+            resp = client.get(f"{BASE}/user/{user2_id}", headers=user1_headers)
+            assert resp.status_code == 200
+            ids = [s["id"] for s in resp.json()]
+            assert user2_privacy_session["id"] in ids, (
+                "Followers must see sessions when session_visibility=friends"
+            )
+        finally:
+            self._set_session_visibility(client, user2_headers, "public")
+            _unfollow_user(client, user1_headers, user2_id)
+
+    def test_private_sessions_hidden_from_unauthenticated(self, client, user2_headers, user2_id, user2_privacy_session):
+        """Unauthenticated user must not see user2's sessions when session_visibility=private."""
+        self._set_session_visibility(client, user2_headers, "private")
+        try:
+            resp = client.get(f"{BASE}/user/{user2_id}")
+            # Should be 401 (unauthenticated)
+            assert resp.status_code == 401
+        finally:
+            self._set_session_visibility(client, user2_headers, "public")
