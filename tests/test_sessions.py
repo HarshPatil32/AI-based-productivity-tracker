@@ -270,3 +270,65 @@ class TestSessionPrivacy:
             assert resp.status_code == 401
         finally:
             self._set_session_visibility(client, user2_headers, "public")
+
+
+class TestSessionLikes:
+    """Tests for POST/DELETE/GET /sessions/{id}/like."""
+
+    def test_like_session(self, client, user2_headers, created_session):
+        """user2 can like user1's public session."""
+        sid = created_session["id"]
+        resp = client.post(f"{BASE}/{sid}/like", headers=user2_headers)
+        assert resp.status_code in (200, 201)
+
+    def test_like_idempotent(self, client, user2_headers, created_session):
+        """Liking an already-liked session returns exactly 200 with a message, not 201."""
+        sid = created_session["id"]
+        resp = client.post(f"{BASE}/{sid}/like", headers=user2_headers)
+        assert resp.status_code == 200
+        assert "already liked" in resp.json().get("detail", "").lower()
+
+    def test_like_no_auth(self, client, created_session):
+        sid = created_session["id"]
+        resp = client.post(f"{BASE}/{sid}/like")
+        assert resp.status_code == 401
+
+    def test_like_nonexistent_session(self, client, user1_headers):
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        resp = client.post(f"{BASE}/{fake_id}/like", headers=user1_headers)
+        assert resp.status_code == 404
+
+    def test_get_session_likes(self, client, user1_headers, user2_id, created_session):
+        """Likes list for the session must include user2."""
+        sid = created_session["id"]
+        resp = client.get(f"{BASE}/{sid}/likes", headers=user1_headers)
+        assert resp.status_code == 200
+        liker_ids = [entry["user_id"] for entry in resp.json()]
+        assert user2_id in liker_ids
+
+    def test_get_likes_no_auth(self, client, created_session):
+        sid = created_session["id"]
+        resp = client.get(f"{BASE}/{sid}/likes")
+        assert resp.status_code == 401
+
+    def test_get_likes_nonexistent_session(self, client, user1_headers):
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        resp = client.get(f"{BASE}/{fake_id}/likes", headers=user1_headers)
+        assert resp.status_code == 404
+
+    def test_unlike_session(self, client, user2_headers, created_session):
+        """user2 can unlike the session."""
+        sid = created_session["id"]
+        resp = client.delete(f"{BASE}/{sid}/like", headers=user2_headers)
+        assert resp.status_code == 204
+
+    def test_unlike_idempotent(self, client, user2_headers, created_session):
+        """Unliking a session that was not liked is silently accepted."""
+        sid = created_session["id"]
+        resp = client.delete(f"{BASE}/{sid}/like", headers=user2_headers)
+        assert resp.status_code == 204
+
+    def test_unlike_no_auth(self, client, created_session):
+        sid = created_session["id"]
+        resp = client.delete(f"{BASE}/{sid}/like")
+        assert resp.status_code == 401

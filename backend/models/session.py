@@ -36,3 +36,11 @@ class SessionSummary(BaseModel):
     total_attention_lost: float
 
 
+class LikeEntry(BaseModel):
+    user_id: UUID
+    username: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    liked_at: datetime
+
+

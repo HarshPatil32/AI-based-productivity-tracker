@@ -192,8 +192,8 @@ SELECT
     ss.session_start_time,
     ss.session_end_time,
 
-    -- Engagement counters (reserved for future likes/comments tables)
-    0 AS likes_count,
+    -- Engagement counters
+    ss.likes_count,
     0 AS comments_count,
 
     ss.created_at
@@ -201,3 +201,75 @@ SELECT
 FROM public.study_sessions ss
 JOIN public.profiles p ON p.id = ss.user_id
 WHERE ss.is_public = TRUE;
+
+
+-- =============================================================================
+-- SESSION LIKES
+-- =============================================================================
+
+-- Add likes_count to study_sessions if it does not already exist
+ALTER TABLE public.study_sessions
+    ADD COLUMN IF NOT EXISTS likes_count INTEGER NOT NULL DEFAULT 0;
+
+-- One like per user per session
+CREATE TABLE IF NOT EXISTS public.session_likes (
+    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id UUID NOT NULL REFERENCES public.study_sessions(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (session_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_likes_session_id
+    ON public.session_likes (session_id);
+
+CREATE INDEX IF NOT EXISTS idx_session_likes_user_id
+    ON public.session_likes (user_id);
+
+-- Trigger: keep study_sessions.likes_count accurate on insert / delete.
+-- Assumptions:
+--   - All likes are inserted/deleted through the session_likes table.
+--   - Direct modifications to study_sessions.likes_count are not expected.
+--   - If likes are ever manually deleted from the table outside the API,
+--     run recalculate_all_likes_counts() to restore accuracy.
+CREATE OR REPLACE FUNCTION public.update_session_likes_count()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE public.study_sessions
+        SET likes_count = likes_count + 1
+        WHERE id = NEW.session_id;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE public.study_sessions
+        SET likes_count = GREATEST(likes_count - 1, 0)
+        WHERE id = OLD.session_id;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_session_likes_count ON public.session_likes;
+CREATE TRIGGER trg_session_likes_count
+AFTER INSERT OR DELETE ON public.session_likes
+FOR EACH ROW EXECUTE FUNCTION public.update_session_likes_count();
+
+-- ---------------------------------------------------------------------------
+-- recalculate_all_likes_counts
+--
+-- Safety utility: recomputes likes_count for every session directly from
+-- the session_likes table. Run this after any manual data changes or to
+-- recover from inconsistencies.
+--
+-- Usage:  SELECT public.recalculate_all_likes_counts();
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.recalculate_all_likes_counts()
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE public.study_sessions ss
+    SET likes_count = (
+        SELECT COUNT(*)::INTEGER
+        FROM public.session_likes sl
+        WHERE sl.session_id = ss.id
+    );
+END;
+$$;

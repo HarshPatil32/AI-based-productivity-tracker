@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Query
+from fastapi.responses import JSONResponse
 from typing import Optional, List
 from uuid import UUID
 from datetime import date
 import logging
 
-from backend.models.session import SessionCreate, SessionResponse, SessionSummary
+from backend.models.session import SessionCreate, SessionResponse, SessionSummary, LikeEntry
 from backend.middleware.auth import require_auth, require_same_user
 from backend.services.database import get_supabase_client, get_supabase_admin_client
 from backend.utils.auth import TokenData
@@ -373,3 +374,176 @@ async def get_user_sessions(
         )
 
     return [_to_session_response(row) for row in result.data]
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{session_id}/like
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{session_id}/like",
+    status_code=status.HTTP_201_CREATED,
+    summary="Like a session (idempotent)",
+)
+async def like_session(
+    session_id: UUID,
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_admin_client()
+    user_id = str(current_user.user_id)
+    sid = str(session_id)
+
+    # Verify session exists and is visible to the caller
+    try:
+        check = (
+            client.table("study_sessions")
+            .select("id, is_public, user_id")
+            .eq("id", sid)
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data.get("is_public") and check.data["user_id"] != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This session is private")
+
+    # Idempotent: if already liked, return 200 (not 201) — nothing was created
+    existing = (
+        client.table("session_likes")
+        .select("id")
+        .eq("session_id", sid)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if existing.data:
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"detail": "Already liked"})
+
+    try:
+        client.table("session_likes").insert(
+            {"session_id": sid, "user_id": user_id}
+        ).execute()
+    except Exception as e:
+        logger.error(f"Failed to like session {sid} for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not like session",
+        )
+
+    return {"detail": "Session liked"}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /sessions/{session_id}/like
+# ---------------------------------------------------------------------------
+
+@router.delete(
+    "/{session_id}/like",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Unlike a session (idempotent)",
+)
+async def unlike_session(
+    session_id: UUID,
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_admin_client()
+    user_id = str(current_user.user_id)
+    sid = str(session_id)
+
+    try:
+        client.table("session_likes").delete().eq("session_id", sid).eq(
+            "user_id", user_id
+        ).execute()
+    except Exception as e:
+        logger.error(f"Failed to unlike session {sid} for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not unlike session",
+        )
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/likes
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{session_id}/likes",
+    response_model=List[LikeEntry],
+    summary="List users who liked a session",
+)
+async def get_session_likes(
+    session_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_admin_client()
+    sid = str(session_id)
+
+    # Verify session exists and is visible
+    try:
+        check = (
+            client.table("study_sessions")
+            .select("id, is_public, user_id")
+            .eq("id", sid)
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data.get("is_public") and check.data["user_id"] != str(current_user.user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This session is private")
+
+    try:
+        likes_result = (
+            client.table("session_likes")
+            .select("user_id, created_at")
+            .eq("session_id", sid)
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch likes for session {sid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve likes",
+        )
+
+    if not likes_result.data:
+        return []
+
+    user_ids = [row["user_id"] for row in likes_result.data]
+    liked_at_map = {row["user_id"]: row["created_at"] for row in likes_result.data}
+
+    try:
+        profiles_result = (
+            client.table("profiles")
+            .select("id, username, full_name, avatar_url")
+            .in_("id", user_ids)
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch profiles for likes on session {sid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve liker profiles",
+        )
+
+    return [
+        LikeEntry(
+            user_id=p["id"],
+            username=p["username"],
+            full_name=p.get("full_name"),
+            avatar_url=p.get("avatar_url"),
+            liked_at=liked_at_map[p["id"]],
+        )
+        for p in (profiles_result.data or [])
+    ]
