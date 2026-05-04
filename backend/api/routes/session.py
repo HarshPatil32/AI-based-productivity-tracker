@@ -8,6 +8,7 @@ import logging
 from backend.models.session import SessionCreate, SessionResponse, SessionSummary, LikeEntry, CommentCreate, CommentResponse
 from backend.middleware.auth import require_auth, require_same_user
 from backend.services.database import get_supabase_client, get_supabase_admin_client
+from backend.services.notifications import create_notification
 from backend.utils.auth import TokenData
 
 logger = logging.getLogger(__name__)
@@ -423,6 +424,14 @@ async def like_session(
             detail="Could not like session",
         )
 
+    create_notification(
+        client,
+        user_id=check.data["user_id"],
+        actor_id=user_id,
+        type="like",
+        entity_id=sid,
+    )
+
     return {"detail": "Session liked"}
 
 
@@ -578,11 +587,13 @@ async def create_comment(
 
     # Validate parent comment: must belong to this session and must be top-level
     # (max nesting depth of 1 — replies to replies are not allowed)
+    parent_comment_author_id: Optional[str] = None
+
     if body.parent_comment_id is not None:
         try:
             parent_check = (
                 client.table("session_comments")
-                .select("id, session_id, parent_comment_id")
+                .select("id, session_id, user_id, parent_comment_id")
                 .eq("id", str(body.parent_comment_id))
                 .single()
                 .execute()
@@ -601,6 +612,8 @@ async def create_comment(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Replies to replies are not supported",
             )
+
+        parent_comment_author_id = parent_check.data["user_id"]
 
     payload = {
         "session_id": sid,
@@ -633,6 +646,27 @@ async def create_comment(
         profile = None
 
     p = profile.data if profile and profile.data else {}
+
+    # Notify the session owner (not the commenter themselves)
+    create_notification(
+        client,
+        user_id=check.data["user_id"],
+        actor_id=user_id,
+        type="comment",
+        entity_id=sid,
+    )
+
+    # Notify the parent comment author on a reply, if they are not the session owner
+    # (avoids sending a duplicate notification to the same person)
+    if parent_comment_author_id and parent_comment_author_id != check.data["user_id"]:
+        create_notification(
+            client,
+            user_id=parent_comment_author_id,
+            actor_id=user_id,
+            type="comment",
+            entity_id=sid,
+        )
+
     return CommentResponse(
         id=row["id"],
         session_id=row["session_id"],

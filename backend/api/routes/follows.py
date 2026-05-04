@@ -6,6 +6,7 @@ import logging
 from backend.models.users import FollowerEntry
 from backend.middleware.auth import require_auth
 from backend.services.database import get_supabase_client, get_supabase_admin_client
+from backend.services.notifications import create_notification
 from backend.utils.auth import TokenData
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,13 @@ async def follow_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not follow user",
         )
+
+    create_notification(
+        client,
+        user_id=following_id,
+        actor_id=follower_id,
+        type="follow",
+    )
 
     return {"detail": "Now following"}
 
