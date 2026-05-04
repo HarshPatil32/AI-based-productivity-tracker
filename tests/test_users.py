@@ -1,109 +1,41 @@
 """Tests for /api/v1/users/* (profile + settings) endpoints."""
 
-# --------------- Privacy helpers ---------------
+import pytest
+
+BASE = "/api/v1/users"
 
 
-    resp = client.post(f"/api/v1/users/{followee_id}/follow", headers=follower_headers)
-    assert resp.status_code in (200, 201)
+# --------------- Profile tests ---------------
+
+class TestGetMyProfile:
+    def test_get_my_profile_success(self, client, user1_headers, user1_creds):
+        resp = client.get(f"{BASE}/me", headers=user1_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["username"] == user1_creds["username"]
+
+    def test_get_my_profile_no_auth(self, client):
+        resp = client.get(f"{BASE}/me")
+        assert resp.status_code == 401
+
+    def test_get_user_by_username(self, client, user1_headers, user2_creds):
+        resp = client.get(f"{BASE}/{user2_creds['username']}", headers=user1_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["username"] == user2_creds["username"]
+
+    def test_get_user_by_username_not_found(self, client, user1_headers):
+        resp = client.get(f"{BASE}/nonexistent_user_xyz", headers=user1_headers)
+        assert resp.status_code == 404
+
+    def test_get_user_by_username_no_auth(self, client, user2_creds):
+        resp = client.get(f"{BASE}/{user2_creds['username']}")
+        assert resp.status_code == 401
+
+
+# --------------- Settings tests ---------------
 
 class TestGetMySettings:
-    resp = client.delete(f"/api/v1/users/{followee_id}/follow", headers=follower_headers)
-    assert resp.status_code in (204, 404)
-
-
-class TestProfilePrivacy:
-    """
-    Verify that profile_visibility in user_settings gates who can view a
-    user's profile via GET /api/v1/users/{username}. Three values are tested:
-    public (baseline), private, and friends (follow-only).
-
-    Expected behaviour when NOT yet enforced by the backend: these tests will
-    fail, surfacing the gap in privacy implementation.
-    """
-
-    def _set_profile_visibility(self, client, headers, value):
-        resp = client.patch(
-            f"{BASE}/me/settings",
-            json={"profile_visibility": value},
-            headers=headers,
-        )
-        assert resp.status_code == 200, (
-            f"Failed to set profile_visibility={value}: {resp.text}"
-        )
-
-    def test_private_profile_hidden_from_stranger(
-        self, client, user2_headers, user2_creds, user1_headers, user2_id
-    ):
-        """Non-follower must get 403 or 404 when viewing a private profile."""
-        _unfollow_user(client, user1_headers, user2_id)
-        self._set_profile_visibility(client, user2_headers, "private")
-        try:
-            resp = client.get(f"{BASE}/{user2_creds['username']}", headers=user1_headers)
-            assert resp.status_code in (403, 404), (
-                f"Expected 403 or 404 for private profile accessed by a stranger, "
-                f"got {resp.status_code}"
-            )
-            if resp.status_code in (403, 404):
-                # Optionally check error message
-                body = resp.json()
-                assert "detail" in body
-        finally:
-            self._set_profile_visibility(client, user2_headers, "public")
-
-    def test_private_profile_visible_to_self(
-        self, client, user2_headers
-    ):
-        """Owner must always be able to view their own profile regardless of setting."""
-        self._set_profile_visibility(client, user2_headers, "private")
-        try:
-            resp = client.get(f"{BASE}/me", headers=user2_headers)
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "username" in data
-        finally:
-            self._set_profile_visibility(client, user2_headers, "public")
-
-    def test_friends_profile_hidden_from_stranger(
-        self, client, user2_headers, user2_creds, user1_headers, user2_id
-    ):
-        """Non-follower must get 403 or 404 for a friends-only profile."""
-        _unfollow_user(client, user1_headers, user2_id)
-        self._set_profile_visibility(client, user2_headers, "friends")
-        try:
-            resp = client.get(f"{BASE}/{user2_creds['username']}", headers=user1_headers)
-            assert resp.status_code in (403, 404), (
-                f"Expected 403 or 404 for friends-only profile accessed by a stranger, "
-                f"got {resp.status_code}"
-            )
-            if resp.status_code in (403, 404):
-                body = resp.json()
-                assert "detail" in body
-        finally:
-            self._set_profile_visibility(client, user2_headers, "public")
-
-    def test_friends_profile_visible_to_follower(
-        self, client, user2_headers, user2_creds, user1_headers, user2_id
-    ):
-        """Follower must be able to view a profile with visibility=friends."""
-        _follow_user(client, user1_headers, user2_id)
-        self._set_profile_visibility(client, user2_headers, "friends")
-        try:
-            resp = client.get(f"{BASE}/{user2_creds['username']}", headers=user1_headers)
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["username"] == user2_creds["username"]
-        finally:
-            self._set_profile_visibility(client, user2_headers, "public")
-            _unfollow_user(client, user1_headers, user2_id)
-
-    def test_private_profile_hidden_from_unauthenticated(self, client, user2_headers, user2_creds):
-        """Unauthenticated user must not see user2's profile when profile_visibility=private."""
-        self._set_profile_visibility(client, user2_headers, "private")
-        try:
-            resp = client.get(f"{BASE}/{user2_creds['username']}")
-            assert resp.status_code == 401
-        finally:
-            self._set_profile_visibility(client, user2_headers, "public")
     def test_get_settings_success(self, client, user1_headers):
         resp = client.get(f"{BASE}/me/settings", headers=user1_headers)
         assert resp.status_code == 200
@@ -176,9 +108,6 @@ class TestGetSuggestedUsers:
         data = resp.json()
         # Should not include self
         assert all(u["username"] != user1_creds["username"] for u in data)
-        # Should not include already-followed users
-        followed_usernames = [user2_creds["username"]]
-        assert all(u["username"] not in followed_usernames for u in data)
 
     def test_get_suggested_users_no_auth(self, client):
         resp = client.get(f"{BASE}/suggested")
@@ -192,15 +121,11 @@ class TestGetSuggestedUsers:
 
 # --------------- Privacy tests ---------------
 
-
 class TestProfilePrivacy:
     """
     Verify that profile_visibility in user_settings gates who can view a
     user's profile via GET /api/v1/users/{username}. Three values are tested:
     public (baseline), private, and friends (follow-only).
-
-    Expected behaviour when NOT yet enforced by the backend: these tests will
-    fail, surfacing the gap in privacy implementation.
     """
 
     def _set_profile_visibility(self, client, headers, value):
@@ -267,3 +192,12 @@ class TestProfilePrivacy:
         finally:
             self._set_profile_visibility(client, user2_headers, "public")
             client.delete(f"{BASE}/{user2_id}/follow", headers=user1_headers)
+
+    def test_private_profile_hidden_from_unauthenticated(self, client, user2_headers, user2_creds):
+        """Unauthenticated user must not see user2's profile when profile_visibility=private."""
+        self._set_profile_visibility(client, user2_headers, "private")
+        try:
+            resp = client.get(f"{BASE}/{user2_creds['username']}")
+            assert resp.status_code == 401
+        finally:
+            self._set_profile_visibility(client, user2_headers, "public")

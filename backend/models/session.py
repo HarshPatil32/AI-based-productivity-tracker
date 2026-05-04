@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -42,5 +42,32 @@ class LikeEntry(BaseModel):
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
     liked_at: datetime
+
+
+class CommentCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=1000, description="Comment text")
+    parent_comment_id: Optional[UUID] = Field(None, description="ID of parent comment for replies")
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("content must not be blank or whitespace only")
+        return stripped
+
+
+class CommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    user_id: UUID
+    username: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    content: str
+    parent_comment_id: Optional[UUID] = None
+    created_at: datetime
 
 

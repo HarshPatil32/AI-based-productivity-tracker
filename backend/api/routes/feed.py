@@ -5,7 +5,7 @@ from datetime import datetime
 import logging
 
 from backend.middleware.auth import require_auth
-from backend.services.database import get_supabase_client
+from backend.services.database import get_supabase_client, get_supabase_admin_client
 from backend.utils.auth import TokenData
 from pydantic import BaseModel, ConfigDict
 
@@ -58,7 +58,7 @@ async def get_feed(
     offset: int = Query(0, ge=0),
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     user_id = str(current_user.user_id)
 
     # Resolve who the current user follows
@@ -76,16 +76,38 @@ async def get_feed(
             detail="Could not build feed",
         )
 
-    following_ids = [row["following_id"] for row in (follows_result.data or [])]
+    original_following_ids = [row["following_id"] for row in (follows_result.data or [])]
+    following_ids = original_following_ids
+
+    # Filter out followed users who have set session_visibility=private.
+    # (friends: current user already follows them, so their sessions are visible;
+    #  private: no one except the owner sees them)
+    if following_ids:
+        try:
+            vis_result = (
+                client.table("user_settings")
+                .select("user_id, session_visibility")
+                .in_("user_id", following_ids)
+                .execute()
+            )
+            private_ids = {
+                row["user_id"]
+                for row in (vis_result.data or [])
+                if row.get("session_visibility") == "private"
+            }
+            following_ids = [uid for uid in following_ids if uid not in private_ids]
+        except Exception as e:
+            logger.error(f"Failed to fetch visibility settings for feed: {e}")
 
     try:
         query = client.table("feed_sessions").select("*")
 
-        if following_ids:
-            # Show sessions from followed users + the user's own sessions
+        if original_following_ids:
+            # User follows people: show allowed followed users + their own sessions.
+            # If all followed users are private, feed_ids collapses to just [user_id].
             feed_ids = following_ids + [user_id]
             query = query.in_("user_id", feed_ids)
-        # If following nobody, fall through with no filter → global public feed
+        # If truly following nobody, fall through with no filter → global public feed
 
         result = (
             query

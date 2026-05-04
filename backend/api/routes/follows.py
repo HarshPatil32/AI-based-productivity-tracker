@@ -169,7 +169,7 @@ async def get_followers(
     offset: int = Query(0, ge=0),
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     target_id = str(user_id)
 
     try:
@@ -201,7 +201,7 @@ async def get_following(
     offset: int = Query(0, ge=0),
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
     target_id = str(user_id)
 
     try:

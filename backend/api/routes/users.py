@@ -204,7 +204,8 @@ async def get_profile_by_username(
     username: str,
     current_user: TokenData = Depends(require_auth),
 ):
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
+    caller_id = str(current_user.user_id)
 
     try:
         result = (
@@ -223,6 +224,36 @@ async def get_profile_by_username(
 
     if not result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    target_id = str(result.data["id"])
+
+    # Owner always sees their own profile
+    if caller_id != target_id:
+        try:
+            settings_result = (
+                client.table("user_settings")
+                .select("profile_visibility")
+                .eq("user_id", target_id)
+                .single()
+                .execute()
+            )
+            profile_visibility = (settings_result.data or {}).get("profile_visibility", "public")
+        except Exception:
+            profile_visibility = "public"
+
+        if profile_visibility == "private":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This profile is private")
+
+        if profile_visibility == "friends":
+            follow_check = (
+                client.table("user_relationships")
+                .select("id")
+                .eq("follower_id", caller_id)
+                .eq("following_id", target_id)
+                .execute()
+            )
+            if not follow_check.data:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This profile is only visible to followers")
 
     return _row_to_profile(result.data)
 

@@ -273,3 +273,27 @@ BEGIN
     );
 END;
 $$;
+
+
+-- =============================================================================
+-- SESSION COMMENTS
+-- =============================================================================
+
+-- Deleting a parent comment cascades to all its replies (ON DELETE CASCADE on
+-- parent_comment_id). This is intentional: replies are meaningless without
+-- their parent. Max nesting depth of 1 is enforced by the API layer.
+CREATE TABLE IF NOT EXISTS public.session_comments (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id        UUID NOT NULL REFERENCES public.study_sessions(id) ON DELETE CASCADE,
+    user_id           UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    parent_comment_id UUID REFERENCES public.session_comments(id) ON DELETE CASCADE,
+    content           TEXT NOT NULL CHECK (char_length(content) BETWEEN 1 AND 1000),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_comments_session_id
+    ON public.session_comments (session_id);
+
+CREATE INDEX IF NOT EXISTS idx_session_comments_parent_id
+    ON public.session_comments (parent_comment_id)
+    WHERE parent_comment_id IS NOT NULL;

@@ -5,7 +5,7 @@ from uuid import UUID
 from datetime import date
 import logging
 
-from backend.models.session import SessionCreate, SessionResponse, SessionSummary, LikeEntry
+from backend.models.session import SessionCreate, SessionResponse, SessionSummary, LikeEntry, CommentCreate, CommentResponse
 from backend.middleware.auth import require_auth, require_same_user
 from backend.services.database import get_supabase_client, get_supabase_admin_client
 from backend.utils.auth import TokenData
@@ -212,12 +212,12 @@ async def get_my_summary(
     )
 
 
-# GET /sessions/user/{user_id}  – another user's public sessions
+# GET /sessions/user/{user_id}  – another user's sessions, respecting session_visibility
 
 @router.get(
     "/user/{user_id}",
     response_model=List[SessionResponse],
-    summary="Get a user's public sessions",
+    summary="Get a user's sessions",
 )
 async def get_user_sessions(
     user_id: UUID,
@@ -227,17 +227,47 @@ async def get_user_sessions(
 ):
     client = get_supabase_admin_client()
     target_id = str(user_id)
+    caller_id = str(current_user.user_id)
+
+    # Non-owners must pass the session_visibility gate
+    if caller_id != target_id:
+        try:
+            settings_result = (
+                client.table("user_settings")
+                .select("session_visibility")
+                .eq("user_id", target_id)
+                .single()
+                .execute()
+            )
+            session_visibility = (settings_result.data or {}).get("session_visibility", "public")
+        except Exception:
+            session_visibility = "public"
+
+        if session_visibility == "private":
+            return []
+
+        if session_visibility == "friends":
+            follow_check = (
+                client.table("user_relationships")
+                .select("id")
+                .eq("follower_id", caller_id)
+                .eq("following_id", target_id)
+                .execute()
+            )
+            if not follow_check.data:
+                return []
 
     try:
-        result = (
+        query = (
             client.table("study_sessions")
             .select("*")
             .eq("user_id", target_id)
-            .eq("is_public", True)
             .order("created_at", desc=True)
             .range(offset, offset + limit - 1)
-            .execute()
         )
+        if caller_id != target_id:
+            query = query.eq("is_public", True)
+        result = query.execute()
     except Exception as e:
         logger.error(f"Failed to fetch sessions for user {target_id}: {e}")
         raise HTTPException(
@@ -334,46 +364,6 @@ async def delete_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not delete session",
         )
-
-
-# GET /sessions/user/{user_id}  – another user's public sessions
-
-@router.get(
-    "/user/{user_id}",
-    response_model=List[SessionResponse],
-    summary="Get public sessions for a specific user",
-)
-async def get_user_sessions(
-    user_id: UUID,
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    current_user: TokenData = Depends(require_auth),
-):
-    client = get_supabase_client()
-    target_id = str(user_id)
-
-    query = (
-        client.table("study_sessions")
-        .select("*")
-        .eq("user_id", target_id)
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-    )
-
-    # If not the owner, restrict to public sessions only
-    if str(current_user.user_id) != target_id:
-        query = query.eq("is_public", True)
-
-    try:
-        result = query.execute()
-    except Exception as e:
-        logger.error(f"Failed to fetch sessions for user {target_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not retrieve sessions",
-        )
-
-    return [_to_session_response(row) for row in result.data]
 
 
 # ---------------------------------------------------------------------------
@@ -547,3 +537,257 @@ async def get_session_likes(
         )
         for p in (profiles_result.data or [])
     ]
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{session_id}/comments
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{session_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Post a comment on a session",
+)
+async def create_comment(
+    session_id: UUID,
+    body: CommentCreate,
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_admin_client()
+    user_id = str(current_user.user_id)
+    sid = str(session_id)
+
+    # Verify session exists and is visible
+    try:
+        check = (
+            client.table("study_sessions")
+            .select("id, is_public, user_id")
+            .eq("id", sid)
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data.get("is_public") and check.data["user_id"] != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This session is private")
+
+    # Validate parent comment: must belong to this session and must be top-level
+    # (max nesting depth of 1 — replies to replies are not allowed)
+    if body.parent_comment_id is not None:
+        try:
+            parent_check = (
+                client.table("session_comments")
+                .select("id, session_id, parent_comment_id")
+                .eq("id", str(body.parent_comment_id))
+                .single()
+                .execute()
+            )
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent comment not found")
+
+        if not parent_check.data or parent_check.data["session_id"] != sid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Parent comment does not belong to this session",
+            )
+
+        if parent_check.data.get("parent_comment_id") is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Replies to replies are not supported",
+            )
+
+    payload = {
+        "session_id": sid,
+        "user_id": user_id,
+        "content": body.content,
+        "parent_comment_id": str(body.parent_comment_id) if body.parent_comment_id else None,
+    }
+
+    try:
+        result = client.table("session_comments").insert(payload).execute()
+    except Exception as e:
+        logger.error(f"Failed to create comment on session {sid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create comment",
+        )
+
+    row = result.data[0]
+
+    # Fetch author profile for the response
+    try:
+        profile = (
+            client.table("profiles")
+            .select("username, full_name, avatar_url")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+    except Exception:
+        profile = None
+
+    p = profile.data if profile and profile.data else {}
+    return CommentResponse(
+        id=row["id"],
+        session_id=row["session_id"],
+        user_id=row["user_id"],
+        username=p.get("username", ""),
+        full_name=p.get("full_name"),
+        avatar_url=p.get("avatar_url"),
+        content=row["content"],
+        parent_comment_id=row.get("parent_comment_id"),
+        created_at=row["created_at"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/comments
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{session_id}/comments",
+    response_model=List[CommentResponse],
+    summary="List comments on a session (paginated)",
+)
+async def list_comments(
+    session_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    parent_comment_id: Optional[UUID] = Query(None, description="Filter replies to a specific comment"),
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_admin_client()
+    user_id = str(current_user.user_id)
+    sid = str(session_id)
+
+    # Verify session exists and is visible
+    try:
+        check = (
+            client.table("study_sessions")
+            .select("id, is_public, user_id")
+            .eq("id", sid)
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    if not check.data.get("is_public") and check.data["user_id"] != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This session is private")
+
+    try:
+        query = (
+            client.table("session_comments")
+            .select("id, session_id, user_id, parent_comment_id, content, created_at")
+            .eq("session_id", sid)
+            .order("created_at", desc=False)
+            .range(offset, offset + limit - 1)
+        )
+        if parent_comment_id is not None:
+            query = query.eq("parent_comment_id", str(parent_comment_id))
+        else:
+            query = query.is_("parent_comment_id", "null")
+
+        comments_result = query.execute()
+    except Exception as e:
+        logger.error(f"Failed to fetch comments for session {sid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not retrieve comments",
+        )
+
+    rows = comments_result.data or []
+    if not rows:
+        return []
+
+    # Fetch author profiles in bulk
+    author_ids = list({row["user_id"] for row in rows})
+    try:
+        profiles_result = (
+            client.table("profiles")
+            .select("id, username, full_name, avatar_url")
+            .in_("id", author_ids)
+            .execute()
+        )
+        profiles_map = {p["id"]: p for p in (profiles_result.data or [])}
+    except Exception:
+        profiles_map = {}
+
+    return [
+        CommentResponse(
+            id=row["id"],
+            session_id=row["session_id"],
+            user_id=row["user_id"],
+            username=profiles_map.get(row["user_id"], {}).get("username", ""),
+            full_name=profiles_map.get(row["user_id"], {}).get("full_name"),
+            avatar_url=profiles_map.get(row["user_id"], {}).get("avatar_url"),
+            content=row["content"],
+            parent_comment_id=row.get("parent_comment_id"),
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# DELETE /sessions/{session_id}/comments/{comment_id}
+# ---------------------------------------------------------------------------
+
+@router.delete(
+    "/{session_id}/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a comment (owner only)",
+)
+async def delete_comment(
+    session_id: UUID,
+    comment_id: UUID,
+    current_user: TokenData = Depends(require_auth),
+):
+    client = get_supabase_admin_client()
+    user_id = str(current_user.user_id)
+    sid = str(session_id)
+    cid = str(comment_id)
+
+    # Verify comment exists and belongs to this session
+    try:
+        check = (
+            client.table("session_comments")
+            .select("id, session_id, user_id")
+            .eq("id", cid)
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    if check.data["session_id"] != sid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    if check.data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own comments",
+        )
+
+    # Deleting a parent comment cascades to all its replies via the FK in schema.sql.
+    # This is intentional — replies are meaningless without their parent context.
+    try:
+        client.table("session_comments").delete().eq("id", cid).execute()
+    except Exception as e:
+        logger.error(f"Failed to delete comment {cid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not delete comment",
+        )

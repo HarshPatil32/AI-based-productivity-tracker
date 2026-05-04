@@ -411,7 +411,7 @@ async def get_current_user(current_user: TokenData = Depends(require_auth)):
     # Get the authenticated user's profile info
 
     try:
-        client = get_supabase_client()
+        client = get_supabase_admin_client()
         profile_response = client.table("profiles").select("*").eq("id", str(current_user.user_id)).single().execute()
 
         if not profile_response.data:
