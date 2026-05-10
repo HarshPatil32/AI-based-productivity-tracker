@@ -10,6 +10,7 @@ from backend.api.routes.users import router as users_router
 from backend.api.routes.follows import router as follows_router
 from backend.api.routes.feed import router as feed_router
 from backend.api.routes.notifications import router as notifications_router
+from backend.api.routes.search import router as search_router
 
 settings = get_settings()
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(follows_router,       prefix=prefix)
     app.include_router(feed_router,          prefix=prefix)
     app.include_router(notifications_router, prefix=prefix)
+    app.include_router(search_router,         prefix=prefix)
 
     # --------------- Health check ---------------
     @app.get("/health", tags=["Health"])
