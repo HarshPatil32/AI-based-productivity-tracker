@@ -116,6 +116,18 @@ CREATE INDEX IF NOT EXISTS idx_user_relationships_following_id
 
 
 -- =============================================================================
+-- SCHEMA AMENDMENTS
+-- These ALTER TABLE statements must appear before any views that reference the
+-- added columns, so they are grouped here rather than inside feature sections.
+-- =============================================================================
+
+-- likes_count was added after initial schema; kept as ALTER for idempotency
+-- when applied to an existing database.
+ALTER TABLE public.study_sessions
+    ADD COLUMN IF NOT EXISTS likes_count INTEGER NOT NULL DEFAULT 0;
+
+
+-- =============================================================================
 -- VIEWS
 -- =============================================================================
 
@@ -207,10 +219,6 @@ WHERE ss.is_public = TRUE;
 -- SESSION LIKES
 -- =============================================================================
 
--- Add likes_count to study_sessions if it does not already exist
-ALTER TABLE public.study_sessions
-    ADD COLUMN IF NOT EXISTS likes_count INTEGER NOT NULL DEFAULT 0;
-
 -- One like per user per session
 CREATE TABLE IF NOT EXISTS public.session_likes (
     id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -297,3 +305,169 @@ CREATE INDEX IF NOT EXISTS idx_session_comments_session_id
 CREATE INDEX IF NOT EXISTS idx_session_comments_parent_id
     ON public.session_comments (parent_comment_id)
     WHERE parent_comment_id IS NOT NULL;
+
+
+-- =============================================================================
+-- ACHIEVEMENTS AND BADGES
+-- =============================================================================
+
+-- Achievement definitions (static catalogue, managed by admins / migrations)
+--
+-- metric_type drives which stat is compared against threshold_value when the
+-- system evaluates whether a user has earned an achievement:
+--   'sessions_count'       — total number of completed study sessions
+--   'study_time_seconds'   — cumulative focused/session time in seconds
+--   'streak_days'          — longest consecutive-day streak
+--   'focus_score_percent'  — single-session focus score (0–100)
+CREATE TABLE IF NOT EXISTS public.achievements (
+    id               UUID    PRIMARY KEY DEFAULT uuid_generate_v4(),
+    slug             TEXT    NOT NULL UNIQUE,
+    name             TEXT    NOT NULL,
+    description      TEXT,
+    icon_url         TEXT,
+    threshold_value  NUMERIC NOT NULL,
+    metric_type      TEXT    NOT NULL
+                         CHECK (metric_type IN (
+                             'sessions_count',
+                             'study_time_seconds',
+                             'streak_days',
+                             'focus_score_percent'
+                         )),
+    -- Soft-disable without losing unlock history
+    is_active        BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Records which users have unlocked which achievements and when.
+-- session_id is populated for session-scoped metrics (e.g. focus_score_percent)
+-- to provide an audit trail; NULL for aggregate metrics.
+CREATE TABLE IF NOT EXISTS public.achievement_unlocks (
+    id             UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id        UUID        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    achievement_id UUID        NOT NULL REFERENCES public.achievements(id) ON DELETE CASCADE,
+    -- The specific session that triggered the unlock (nullable for non-session metrics)
+    session_id     UUID        REFERENCES public.study_sessions(id) ON DELETE SET NULL,
+    unlocked_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, achievement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_achievement_unlocks_user_id
+    ON public.achievement_unlocks (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_achievement_unlocks_achievement_id
+    ON public.achievement_unlocks (achievement_id);
+
+CREATE INDEX IF NOT EXISTS idx_achievements_metric_type
+    ON public.achievements (metric_type);
+
+-- Ensure session_id column exists (handles databases created from older schema versions)
+ALTER TABLE public.achievement_unlocks
+    ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES public.study_sessions(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_achievement_unlocks_session_id
+    ON public.achievement_unlocks (session_id)
+    WHERE session_id IS NOT NULL;
+
+
+-- =============================================================================
+-- SEED: INITIAL ACHIEVEMENTS
+-- =============================================================================
+
+INSERT INTO public.achievements (slug, name, description, threshold_value, metric_type)
+VALUES
+    (
+        'first-session',
+        'First Session',
+        'Complete your very first study session.',
+        1,
+        'sessions_count'
+    ),
+    (
+        '10-hours-studied',
+        '10 Hours Studied',
+        'Accumulate 10 hours of total study time.',
+        36000,
+        'study_time_seconds'
+    ),
+    (
+        '7-day-streak',
+        '7-Day Streak',
+        'Study for 7 consecutive days.',
+        7,
+        'streak_days'
+    ),
+    (
+        '90-focus-master',
+        '90% Focus Master',
+        'Achieve a focus score of 90% or higher in a single session.',
+        90,
+        'focus_score_percent'
+    ),
+    (
+        '100-sessions',
+        '100 Sessions',
+        'Complete 100 study sessions.',
+        100,
+        'sessions_count'
+    )
+ON CONFLICT (slug) DO NOTHING;
+
+
+-- ---------------------------------------------------------------------------
+-- recalculate_all_achievement_unlocks
+--
+-- Safety utility: re-evaluates and backfills achievement_unlocks for all
+-- users based on current aggregate stats. Run after seeding new achievements
+-- or after manual data changes to ensure unlock records are consistent.
+--
+-- Usage:  SELECT public.recalculate_all_achievement_unlocks();
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.recalculate_all_achievement_unlocks()
+RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE
+    v_achievement RECORD;
+    v_user        RECORD;
+    v_stat        NUMERIC;
+BEGIN
+    FOR v_achievement IN
+        SELECT id, metric_type, threshold_value
+        FROM public.achievements
+        WHERE is_active = TRUE
+    LOOP
+        FOR v_user IN SELECT id FROM public.profiles LOOP
+
+            -- Compute the relevant stat for this user / metric combination
+            IF v_achievement.metric_type = 'sessions_count' THEN
+                SELECT COUNT(*)::NUMERIC INTO v_stat
+                FROM public.study_sessions
+                WHERE user_id = v_user.id;
+
+            ELSIF v_achievement.metric_type = 'study_time_seconds' THEN
+                SELECT COALESCE(SUM(session_duration), 0)::NUMERIC INTO v_stat
+                FROM public.study_sessions
+                WHERE user_id = v_user.id;
+
+            ELSIF v_achievement.metric_type = 'streak_days' THEN
+                -- Streak calculation is handled by the application layer;
+                -- this function cannot recompute it from raw data alone.
+                -- Skip streak achievements during bulk recalculation.
+                CONTINUE;
+
+            ELSIF v_achievement.metric_type = 'focus_score_percent' THEN
+                SELECT COALESCE(MAX(focus_score), 0)::NUMERIC INTO v_stat
+                FROM public.study_sessions
+                WHERE user_id = v_user.id;
+            END IF;
+
+            -- Insert unlock if threshold is met; skip if already recorded
+            IF v_stat >= v_achievement.threshold_value THEN
+                INSERT INTO public.achievement_unlocks (user_id, achievement_id)
+                VALUES (v_user.id, v_achievement.id)
+                ON CONFLICT (user_id, achievement_id) DO NOTHING;
+            END IF;
+
+        END LOOP;
+    END LOOP;
+END;
+$$;
