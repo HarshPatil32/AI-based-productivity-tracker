@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from backend.config.settings import get_settings
-from backend.middleware.auth import AuthMiddleware, RateLimitMiddleWare
+from backend.middleware.auth import AuthMiddleware, MaxBodySizeMiddleware, RateLimitMiddleWare
 from backend.api.routes.auth import router as auth_router
 from backend.api.routes.session import router as session_router
 from backend.api.routes.users import router as users_router
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(MaxBodySizeMiddleware)
     app.add_middleware(RateLimitMiddleWare)
     app.add_middleware(AuthMiddleware)
 

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from typing import List
 from uuid import UUID
 import logging
 
 from backend.models.users import (
+    AvatarUploadResponse,
     ProfileResponse,
     ProfileUpdate,
     UserSettingsResponse,
@@ -116,6 +117,115 @@ async def update_my_profile(
         .execute()
     )
     return _row_to_profile(view_result.data)
+
+
+# --------------- Avatar upload ---------------
+
+_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+_MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
+_CHUNK_SIZE = 64 * 1024  # 64 KB
+
+# Leading magic bytes used to verify actual file content against the declared content type
+_MAGIC_SIGNATURES: dict[str, bytes] = {
+    "image/jpeg": b"\xff\xd8\xff",
+    "image/png": b"\x89PNG\r\n\x1a\n",
+    "image/webp": b"RIFF",  # first 4 bytes; bytes 8-12 must also be b"WEBP"
+}
+
+
+def _verify_magic_bytes(content_type: str, data: bytes) -> bool:
+    sig = _MAGIC_SIGNATURES.get(content_type)
+    if sig is None or len(data) < len(sig):
+        return False
+    if content_type == "image/webp":
+        return data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP"
+    return data[: len(sig)] == sig
+
+
+@router.post(
+    "/me/avatar",
+    response_model=AvatarUploadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Upload an avatar image for the authenticated user",
+)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: TokenData = Depends(require_auth),
+):
+    content_type = file.content_type or ""
+    if content_type not in _ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported file type. Allowed: JPEG, PNG, WebP",
+        )
+
+    # Stream-read in chunks so oversized uploads are rejected before fully buffering
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(_CHUNK_SIZE):
+        total += len(chunk)
+        if total > _MAX_AVATAR_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File exceeds the 5 MB size limit",
+            )
+        chunks.append(chunk)
+    file_bytes = b"".join(chunks)
+
+    # Verify actual file content matches the declared content type
+    if not _verify_magic_bytes(content_type, file_bytes):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="File content does not match the declared content type",
+        )
+
+    user_id = str(current_user.user_id)
+    # Fixed path without extension so re-uploads with a different type never leave orphaned files
+    storage_path = f"{user_id}/avatar"
+
+    admin = get_supabase_admin_client()
+    try:
+        admin.storage.from_("avatars").upload(
+            path=storage_path,
+            file=file_bytes,
+            file_options={"content-type": content_type, "upsert": "true"},
+        )
+    except Exception as e:
+        logger.error(f"Avatar upload to storage failed for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not upload avatar",
+        )
+
+    public_url: str = admin.storage.from_("avatars").get_public_url(storage_path)
+
+    if not public_url:
+        logger.error(f"get_public_url returned empty for user {user_id}, path {storage_path}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate public avatar URL",
+        )
+
+    try:
+        admin.table("profiles").update({"avatar_url": public_url}).eq("id", user_id).execute()
+    except Exception as e:
+        logger.error(f"Failed to update avatar_url for user {user_id}: {e}")
+        # Roll back the storage upload so the file and DB stay in sync
+        try:
+            admin.storage.from_("avatars").remove([storage_path])
+            logger.info(f"Rolled back avatar storage for user {user_id} after DB failure")
+        except Exception as cleanup_err:
+            logger.error(f"Storage rollback also failed for user {user_id}: {cleanup_err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not update profile with avatar URL",
+        )
+
+    return AvatarUploadResponse(avatar_url=public_url)
 
 
 # --------------- User search ---------------

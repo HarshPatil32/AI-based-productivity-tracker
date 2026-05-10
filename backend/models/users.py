@@ -30,6 +30,10 @@ class ProfileUpdate(BaseModel):
     bio: Optional[str] = Field(None, max_length=500)
 
 
+class AvatarUploadResponse(BaseModel):
+    avatar_url: str
+
+
 # --------------- Follow models ---------------
 
 class FollowResponse(BaseModel):

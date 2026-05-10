@@ -236,6 +236,33 @@ async def verify_session_access(session_id, current_user):
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail = "Error verifying session access"
         )
+
+
+# 5 MB avatar + ~1 MB multipart envelope headroom
+_MAX_UPLOAD_BODY_BYTES = 6 * 1024 * 1024
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose Content-Length exceeds the upload body limit before
+    any bytes are read into application memory."""
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                length = int(content_length)
+            except ValueError:
+                from starlette.responses import JSONResponse
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
+            if length > _MAX_UPLOAD_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large"},
+                )
+        return await call_next(request)
     
 
 async def verify_resource_owner(

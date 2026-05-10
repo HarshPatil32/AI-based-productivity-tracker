@@ -1,3 +1,17 @@
+import io
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
+def make_image_bytes(format="JPEG", size=(64, 64), color=(255, 0, 0)):
+    if Image is None:
+        pytest.skip("Pillow (PIL) is required for image upload tests")
+    buf = io.BytesIO()
+    img = Image.new("RGB", size, color)
+    img.save(buf, format=format)
+    buf.seek(0)
+    return buf.read()
 """Tests for /api/v1/users/* (profile + settings) endpoints."""
 
 import pytest
@@ -18,7 +32,7 @@ class TestGetMyProfile:
         resp = client.get(f"{BASE}/me")
         assert resp.status_code == 401
 
-    def test_get_user_by_username(self, client, user1_headers, user2_creds):
+    def test_get_user_by_username(self, client, user1_headers, user2_creds, user2_tokens):
         resp = client.get(f"{BASE}/{user2_creds['username']}", headers=user1_headers)
         assert resp.status_code == 200
         data = resp.json()
